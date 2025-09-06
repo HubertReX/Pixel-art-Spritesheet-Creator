@@ -18,13 +18,16 @@ interface ControlsProps {
     setSelectedViewpoints: (viewpoints: string[]) => void;
     generateAnimation: boolean;
     setGenerateAnimation: (generate: boolean) => void;
+    animationType: string;
+    setAnimationType: (type: string) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
     spriteSize, setSpriteSize, frameCount, setFrameCount,
     initialPrompt, setInitialPrompt, setInitialImage,
     onGenerate, isGenerating, hasContent, onExport,
-    selectedViewpoints, setSelectedViewpoints, generateAnimation, setGenerateAnimation
+    selectedViewpoints, setSelectedViewpoints, generateAnimation, setGenerateAnimation,
+    animationType, setAnimationType
 }) => {
     
     const allViewpoints = ['front', 'back', 'left', 'right'];
@@ -115,15 +118,28 @@ const Controls: React.FC<ControlsProps> = ({
 
                 <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">2. Animate?</label>
-                    <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                    <div className="space-y-3">
+                        <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={generateAnimation}
+                                onChange={(e) => setGenerateAnimation(e.target.checked)}
+                                className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                            />
+                            <span>Generate Animation Frames</span>
+                        </label>
+                        
                         <input
-                            type="checkbox"
-                            checked={generateAnimation}
-                            onChange={(e) => setGenerateAnimation(e.target.checked)}
-                            className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                            type="text"
+                            id="animationType"
+                            aria-label="Animation type"
+                            value={animationType}
+                            onChange={(e) => setAnimationType(e.target.value)}
+                            placeholder="Animation type (e.g. walk, run)"
+                            className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
+                            disabled={!generateAnimation}
                         />
-                        <span>Generate Animation Frames</span>
-                    </label>
+                    </div>
                 </div>
             </div>
 
