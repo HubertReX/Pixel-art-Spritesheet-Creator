@@ -37,14 +37,14 @@ const App: React.FC = () => {
         setError(null);
         setSpriteGrid([]);
         setSelectedSprite(null);
-        
+
         const numRows = generateAnimation ? frameCount : 1;
         const viewpointsToGenerate = allViewpoints.filter(vp => selectedViewpoints.includes(vp));
         const numCols = viewpointsToGenerate.length;
 
         const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
         const contextImages: { mimeType: string; data: string }[] = [];
-        
+
         if (initialImage) {
             try {
                 const base64Image = await fileToBase64(initialImage);
@@ -61,15 +61,15 @@ const App: React.FC = () => {
                 for (let col = 0; col < numCols; col++) {
                     const viewpoint = viewpointsToGenerate[col];
                     const animationState = !generateAnimation || row === 0 ? 'standing still' : `in a walking animation (frame ${row + 1} of ${frameCount})`;
-                    
+
                     const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite for a top-down view game. The character is ${initialPrompt}. The character is facing ${viewpoint} and is ${animationState}. Maintain a consistent character design based on the provided context images.`;
-                    
+
                     setLoadingMessage(`Generating... Frame ${row + 1}/${numRows}, View: ${viewpoint}`);
-                    
+
                     const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize);
                     const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
                     const previewUrl = await removeMagentaBackground(imageUrl);
-                    
+
                     const newSprite: Sprite = {
                         id: `${row}-${col}`,
                         imageUrl: imageUrl,
@@ -99,7 +99,7 @@ const App: React.FC = () => {
 
     const handleEdit = async (editPrompt: string) => {
         if (!selectedSprite || !editPrompt) return;
-        
+
         const { row, col } = selectedSprite;
         const targetSprite = spriteGrid[row][col];
         if (!targetSprite) return;
@@ -110,7 +110,7 @@ const App: React.FC = () => {
 
         // Gather context: sprites from the same row and column for better consistency
         const contextSprites = spriteGrid.flat().filter(sprite => sprite && sprite.id !== targetSprite.id).slice(0, 5) as Sprite[];
-        
+
         try {
             const editedSpriteBase64 = await editSprite(editPrompt, targetSprite, contextSprites, spriteSize);
             const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
@@ -132,7 +132,7 @@ const App: React.FC = () => {
             setSelectedSprite(null);
         }
     };
-    
+
     const handleExport = async () => {
         if (spriteGrid.length === 0) return;
         const dataUrl = await combineSprites(spriteGrid, spriteSize);
@@ -147,7 +147,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-[#282c34] min-h-screen text-gray-200 font-mono flex flex-col p-4 gap-4">
             <header className="text-center border-b border-gray-600 pb-2">
-                <h1 className="text-2xl font-bold text-cyan-400">Pixel Sprite Artisan AI</h1>
+                <h1 className="text-2xl font-bold text-cyan-400">Pixel-art Spritesheet Creator</h1>
                 <p className="text-sm text-gray-400">Create game-ready sprite sheets with Nano Banana</p>
             </header>
 
