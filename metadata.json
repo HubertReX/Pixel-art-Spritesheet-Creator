@@ -1,0 +1,5 @@
+{
+  "name": "Pixel-art Spritesheet Creator",
+  "description": "An AI-powered web application for generating and editing top-down view pixel art character sprite sheets for games. Users can provide a text description or a reference image to create multi-frame, multi-angle character animations, edit individual sprites, and export the final sprite sheet as a single PNG file.",
+  "requestFramePermissions": []
+}
