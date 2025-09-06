@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Sprite } from '../types';
 
@@ -8,7 +7,7 @@ if (!process.env.API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a transparent background. Do not include any text, labels, or other elements in the image.`;
+const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a solid magenta background (color #FF00FF). The background must be pure, solid magenta. Do not include any text, labels, or other elements in the image.`;
 
 const extractImageBase64 = (response: any): string => {
     const imagePart = response.candidates?.[0]?.content?.parts?.find((part: any) => part.inlineData);
@@ -33,7 +32,7 @@ export const generateSprite = async (
     contextImages: { mimeType: string; data: string }[],
     spriteSize: number
 ): Promise<string> => {
-    const fullPrompt = `${prompt}. ${basePromptEnhancer} The final sprite must be exactly ${spriteSize}x${spriteSize} pixels.`;
+    const fullPrompt = `${prompt}. ${basePromptEnhancer} The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
 
     const parts = [
         ...contextImages.map(img => imageToBase64Part(img.data, img.mimeType)),
@@ -57,7 +56,7 @@ export const editSprite = async (
     contextSprites: Sprite[],
     spriteSize: number
 ): Promise<string> => {
-    const fullPrompt = `Edit the primary input image based on this instruction: "${editPrompt}". The sprite must remain in a ${spriteSize}x${spriteSize} pixel art style for a top-down game. Use the other images as context for the character's consistent design. ${basePromptEnhancer}`;
+    const fullPrompt = `Edit the primary input image based on this instruction: "${editPrompt}". The sprite must maintain the appearance of a ${spriteSize}x${spriteSize} pixel art style for a top-down game. Use the other images as context for the character's consistent design. ${basePromptEnhancer}`;
 
     const parts = [
         imageToBase64Part(targetSprite.imageUrl), // Primary image to edit

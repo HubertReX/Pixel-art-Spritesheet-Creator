@@ -14,18 +14,32 @@ interface ControlsProps {
     isGenerating: boolean;
     hasContent: boolean;
     onExport: () => void;
+    selectedViewpoints: string[];
+    setSelectedViewpoints: (viewpoints: string[]) => void;
+    generateAnimation: boolean;
+    setGenerateAnimation: (generate: boolean) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
     spriteSize, setSpriteSize, frameCount, setFrameCount,
     initialPrompt, setInitialPrompt, setInitialImage,
-    onGenerate, isGenerating, hasContent, onExport
+    onGenerate, isGenerating, hasContent, onExport,
+    selectedViewpoints, setSelectedViewpoints, generateAnimation, setGenerateAnimation
 }) => {
+    
+    const allViewpoints = ['front', 'back', 'left', 'right'];
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setInitialImage(e.target.files[0]);
         }
+    };
+
+    const handleViewpointChange = (viewpoint: string) => {
+        const newSelection = selectedViewpoints.includes(viewpoint)
+            ? selectedViewpoints.filter(v => v !== viewpoint)
+            : [...selectedViewpoints, viewpoint];
+        setSelectedViewpoints(newSelection);
     };
     
     return (
@@ -52,9 +66,10 @@ const Controls: React.FC<ControlsProps> = ({
                         id="frameCount"
                         value={frameCount}
                         onChange={(e) => setFrameCount(parseInt(e.target.value, 10))}
-                        className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                        className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
                         min="1"
                         max="16"
+                        disabled={!generateAnimation}
                     />
                 </div>
             </div>
@@ -78,6 +93,38 @@ const Controls: React.FC<ControlsProps> = ({
                     <span>Choose File</span>
                     <input id="initialImage" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
                 </label>
+            </div>
+            
+            <div className="border-t border-gray-600 pt-4 flex flex-col gap-4">
+                 <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">1. Select Viewpoints</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        {allViewpoints.map(vp => (
+                            <label key={vp} className="flex items-center space-x-2 text-sm cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedViewpoints.includes(vp)}
+                                    onChange={() => handleViewpointChange(vp)}
+                                    className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                                />
+                                <span>{vp.charAt(0).toUpperCase() + vp.slice(1)}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">2. Animate?</label>
+                    <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={generateAnimation}
+                            onChange={(e) => setGenerateAnimation(e.target.checked)}
+                            className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                        />
+                        <span>Generate Animation Frames</span>
+                    </label>
+                </div>
             </div>
 
             <button

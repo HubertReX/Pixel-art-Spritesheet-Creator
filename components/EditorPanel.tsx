@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Sprite } from '../types';
 import { EditIcon } from './icons';
@@ -27,7 +26,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({ sprite, onEdit, onClose, isEd
             </div>
             
             <div className="flex justify-center p-2 bg-[#282c34] rounded-md checkerboard">
-                <img src={sprite.imageUrl} alt="Selected Sprite" className="w-24 h-24" style={{ imageRendering: 'pixelated' }} />
+                <img src={sprite.previewUrl} alt="Selected Sprite" className="w-24 h-24" style={{ imageRendering: 'pixelated' }} />
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-2">

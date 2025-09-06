@@ -1,15 +1,14 @@
-
 import React, { useState, useCallback } from 'react';
 import { Sprite } from './types';
 import { generateSprite, editSprite } from './services/geminiService';
-import { fileToBase64, combineSprites } from './utils/imageUtils';
+import { fileToBase64, combineSprites, removeMagentaBackground } from './utils/imageUtils';
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
 import EditorPanel from './components/EditorPanel';
 import { LoadingIcon } from './components/icons';
 
 const App: React.FC = () => {
-    const [spriteSize, setSpriteSize] = useState<number>(16);
+    const [spriteSize, setSpriteSize] = useState<number>(32);
     const [frameCount, setFrameCount] = useState<number>(4);
     const [initialPrompt, setInitialPrompt] = useState<string>('');
     const [initialImage, setInitialImage] = useState<File | null>(null);
@@ -18,12 +17,19 @@ const App: React.FC = () => {
     const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [selectedSprite, setSelectedSprite] = useState<{ row: number; col: number } | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [selectedViewpoints, setSelectedViewpoints] = useState<string[]>(['front']);
+    const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
+    const [zoomLevel, setZoomLevel] = useState<number>(32);
 
-    const viewpoints = ['front', 'back', 'left', 'right'];
+    const allViewpoints = ['front', 'back', 'left', 'right'];
 
     const handleGenerate = async () => {
         if (!initialPrompt && !initialImage) {
             setError('Please provide a text description or an image.');
+            return;
+        }
+        if (selectedViewpoints.length === 0) {
+            setError('Please select at least one viewpoint to generate.');
             return;
         }
 
@@ -32,7 +38,11 @@ const App: React.FC = () => {
         setSpriteGrid([]);
         setSelectedSprite(null);
         
-        const newGrid: (Sprite | null)[][] = Array(frameCount).fill(null).map(() => Array(4).fill(null));
+        const numRows = generateAnimation ? frameCount : 1;
+        const viewpointsToGenerate = allViewpoints.filter(vp => selectedViewpoints.includes(vp));
+        const numCols = viewpointsToGenerate.length;
+
+        const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
         const contextImages: { mimeType: string; data: string }[] = [];
         
         if (initialImage) {
@@ -47,20 +57,23 @@ const App: React.FC = () => {
         }
 
         try {
-            for (let row = 0; row < frameCount; row++) {
-                for (let col = 0; col < 4; col++) {
-                    const viewpoint = viewpoints[col];
-                    const animationState = row === 0 ? 'standing still' : `in a walking animation (frame ${row + 1} of ${frameCount})`;
+            for (let row = 0; row < numRows; row++) {
+                for (let col = 0; col < numCols; col++) {
+                    const viewpoint = viewpointsToGenerate[col];
+                    const animationState = !generateAnimation || row === 0 ? 'standing still' : `in a walking animation (frame ${row + 1} of ${frameCount})`;
                     
                     const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite for a top-down view game. The character is ${initialPrompt}. The character is facing ${viewpoint} and is ${animationState}. Maintain a consistent character design based on the provided context images.`;
                     
-                    setLoadingMessage(`Generating... Frame ${row + 1}/${frameCount}, View: ${viewpoint}`);
+                    setLoadingMessage(`Generating... Frame ${row + 1}/${numRows}, View: ${viewpoint}`);
                     
                     const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize);
+                    const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
+                    const previewUrl = await removeMagentaBackground(imageUrl);
                     
                     const newSprite: Sprite = {
                         id: `${row}-${col}`,
-                        imageUrl: `data:image/png;base64,${newSpriteBase64}`,
+                        imageUrl: imageUrl,
+                        previewUrl: previewUrl,
                         prompt: prompt
                     };
 
@@ -100,10 +113,14 @@ const App: React.FC = () => {
         
         try {
             const editedSpriteBase64 = await editSprite(editPrompt, targetSprite, contextSprites, spriteSize);
+            const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
+            const previewUrl = await removeMagentaBackground(imageUrl);
+
             const newGrid = [...spriteGrid.map(r => [...r])];
             newGrid[row][col] = {
                 ...targetSprite,
-                imageUrl: `data:image/png;base64,${editedSpriteBase64}`,
+                imageUrl: imageUrl,
+                previewUrl: previewUrl,
             };
             setSpriteGrid(newGrid);
         } catch (err) {
@@ -155,6 +172,10 @@ const App: React.FC = () => {
                         isGenerating={isLoading}
                         hasContent={spriteGrid.length > 0}
                         onExport={handleExport}
+                        selectedViewpoints={selectedViewpoints}
+                        setSelectedViewpoints={setSelectedViewpoints}
+                        generateAnimation={generateAnimation}
+                        setGenerateAnimation={setGenerateAnimation}
                     />
                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
 
@@ -168,13 +189,33 @@ const App: React.FC = () => {
                     )}
                 </div>
 
-                <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex items-center justify-center checkerboard">
-                   <SpriteGrid
-                        grid={spriteGrid}
-                        spriteSize={spriteSize}
-                        onSpriteSelect={handleSpriteSelect}
-                        selectedSprite={selectedSprite}
-                    />
+                <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4">
+                    {/* Zoom Slider */}
+                    <div className="w-full max-w-sm flex items-center gap-4 px-4">
+                        <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
+                        <input
+                            id="zoom-slider"
+                            type="range"
+                            min="1"
+                            max="64"
+                            step="1"
+                            value={zoomLevel}
+                            onChange={(e) => setZoomLevel(Number(e.target.value))}
+                            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                        />
+                        <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
+                    </div>
+
+                    {/* Sprite Grid Container */}
+                    <div className="flex-grow w-full flex items-center justify-center checkerboard p-2 rounded-md overflow-auto">
+                        <SpriteGrid
+                            grid={spriteGrid}
+                            spriteSize={spriteSize}
+                            onSpriteSelect={handleSpriteSelect}
+                            selectedSprite={selectedSprite}
+                            zoomLevel={zoomLevel}
+                        />
+                    </div>
                 </main>
             </div>
         </div>

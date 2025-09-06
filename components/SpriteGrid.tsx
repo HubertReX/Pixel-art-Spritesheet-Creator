@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Sprite } from '../types';
 
@@ -7,9 +6,10 @@ interface SpriteGridProps {
     spriteSize: number;
     onSpriteSelect: (row: number, col: number) => void;
     selectedSprite: { row: number; col: number } | null;
+    zoomLevel: number;
 }
 
-const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelect, selectedSprite }) => {
+const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelect, selectedSprite, zoomLevel }) => {
     if (grid.length === 0) {
         return (
             <div className="flex items-center justify-center w-full h-64 text-gray-400">
@@ -20,15 +20,15 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelec
 
     const rows = grid.length;
     const cols = grid[0]?.length || 0;
+    const displaySize = spriteSize * zoomLevel;
 
     return (
         <div
-            className="grid bg-transparent p-2"
+            className="grid bg-transparent p-2 border-2 border-gray-500 rounded-md"
             style={{
-                gridTemplateColumns: `repeat(${cols}, ${spriteSize}px)`,
-                gridTemplateRows: `repeat(${rows}, ${spriteSize}px)`,
+                gridTemplateColumns: `repeat(${cols}, ${displaySize}px)`,
+                gridTemplateRows: `repeat(${rows}, ${displaySize}px)`,
                 gap: '4px',
-                imageRendering: 'pixelated',
             }}
         >
             {grid.map((row, rowIndex) =>
@@ -42,14 +42,15 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelec
                         <div
                             key={`${rowIndex}-${colIndex}`}
                             className={cellClasses}
-                            style={{ width: `${spriteSize}px`, height: `${spriteSize}px` }}
+                            style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
                             onClick={() => sprite && onSpriteSelect(rowIndex, colIndex)}
                         >
                             {sprite ? (
                                 <img
-                                    src={sprite.imageUrl}
+                                    src={sprite.previewUrl}
                                     alt={`Sprite ${rowIndex}-${colIndex}`}
                                     className="w-full h-full object-contain"
+                                    style={{ imageRendering: 'pixelated' }}
                                 />
                             ) : null}
                         </div>
