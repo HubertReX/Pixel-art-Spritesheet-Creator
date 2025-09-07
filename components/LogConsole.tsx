@@ -1,9 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-interface Log {
-    timestamp: string;
-    message: string;
-}
+import { Log } from '../types';
 
 interface LogConsoleProps {
     logs: Log[];
@@ -38,8 +34,20 @@ const LogConsole: React.FC<LogConsoleProps> = ({ logs }) => {
                 >
                     {logs.map((log, index) => (
                         <div key={index} className="mb-2 last:mb-0">
-                            <span className="text-green-400">{log.timestamp}: </span>
-                            <span className="text-gray-300 whitespace-pre-wrap">{log.message}</span>
+                            <div>
+                                <span className="text-green-400">{log.timestamp}: </span>
+                                <span className="text-cyan-400 font-bold">{log.title}</span>
+                            </div>
+                            <div className="pl-4 border-l border-gray-700 ml-2 mt-1">
+                                {Object.entries(log.details)
+                                    .filter(([, value]) => value !== undefined)
+                                    .map(([key, value]) => (
+                                    <div key={key} className="flex items-start">
+                                        <span className="text-yellow-500 flex-shrink-0 font-semibold">{key}:&nbsp;</span>
+                                        <span className="text-gray-300 whitespace-pre-wrap break-words">{String(value)}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     ))}
                      {logs.length === 0 && <p className="text-gray-500">No logs yet. Generate a character to see prompt details.</p>}

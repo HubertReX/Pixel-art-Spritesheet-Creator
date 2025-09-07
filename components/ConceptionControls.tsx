@@ -36,7 +36,8 @@ const ConceptionControls: React.FC<ConceptionControlsProps> = ({
     const suggestions = [
         { name: 'glowing ghost', prompt: 'a floating, glowy ghost, similar to the ones in PacMan game' },
         { name: 'dark warrior', prompt: 'cartoonish, sharp, Japanese, shadow warrior with long katana and thin legs. Simple design, limit color palette to 6' },
-        { name: 'silly dragon', prompt: 'cartoonish, silly dragon, with a big belly' }
+        { name: 'silly dragon', prompt: 'cartoonish, silly dragon, with a big belly' },
+        { name: 'brave knight', prompt: 'A brave knight with shiny silver armor. Use a few colors. Make it clean, without too many details.' }
     ];
 
     return (

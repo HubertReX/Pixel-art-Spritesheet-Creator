@@ -39,16 +39,11 @@ export const generateDesignName = async (prompt: string): Promise<string> => {
 export const generateBaseCharacter = async (
     prompt: string,
     contextImage: { mimeType: string; data: string } | null,
-    spriteSize: number,
-    logPrompt?: (prompt:string) => void
+    spriteSize: number
 ): Promise<string> => {
     const specialInstructions = `Perspective is top-down facing front. The character should fill the frame as much as possible. If the character has feet, they should touch the bottom border of the image. The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
     const fullPrompt = `${prompt}. ${specialInstructions} ${basePromptEnhancer}`;
     
-    if (logPrompt) {
-        logPrompt(fullPrompt);
-    }
-
     const parts = [];
     if (contextImage) {
         parts.push(imageToBase64Part(contextImage.data, contextImage.mimeType));
@@ -70,15 +65,10 @@ export const generateBaseCharacter = async (
 export const generateSprite = async (
     prompt: string,
     contextImages: { mimeType: string; data: string }[],
-    spriteSize: number,
-    logPrompt?: (prompt: string) => void
+    spriteSize: number
 ): Promise<string> => {
     const fullPrompt = `${prompt}. ${basePromptEnhancer} The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
     
-    if (logPrompt) {
-        logPrompt(fullPrompt);
-    }
-
     const parts = [
         ...contextImages.map(img => imageToBase64Part(img.data, img.mimeType)),
         { text: fullPrompt },
@@ -99,15 +89,10 @@ export const editSprite = async (
     editPrompt: string,
     targetSprite: Sprite,
     contextSprites: Sprite[],
-    spriteSize: number,
-    logPrompt?: (prompt: string) => void
+    spriteSize: number
 ): Promise<string> => {
     const fullPrompt = `Edit the primary input image based on this instruction: "${editPrompt}". The sprite must maintain the appearance of a ${spriteSize}x${spriteSize} pixel art style. Use the other images as context for the character's consistent design. ${basePromptEnhancer}`;
     
-    if (logPrompt) {
-        logPrompt(fullPrompt);
-    }
-
     const parts = [
         imageToBase64Part(targetSprite.imageUrl), // Primary image to edit
         ...contextSprites.map(sprite => imageToBase64Part(sprite.imageUrl)),

@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Sprite, Design, BaseCharacter, AnimationPose } from './types';
+import { Sprite, Design, BaseCharacter, AnimationPose, Log } from './types';
 import { generateBaseCharacter, generateSprite, editSprite, generateDesignName } from './services/geminiService';
 import { fileToBase64, combineSprites, removeMagentaBackground, flipImageHorizontally } from './utils/imageUtils';
 import { getAllDesigns, saveDesign, deleteDesign, bulkSaveDesigns } from './services/db';
@@ -18,11 +18,6 @@ import ConfirmModal from './components/ConfirmModal';
 
 
 type WorkflowStage = 'conception' | 'spritesheet';
-
-interface Log {
-    timestamp: string;
-    message: string;
-}
 
 const App: React.FC = () => {
     // Design State
@@ -106,9 +101,9 @@ const App: React.FC = () => {
         loadDesignsFromDB();
     }, []);
 
-    const addLog = (prompt: string) => {
+    const addLog = (title: string, details: Record<string, string | undefined>) => {
         const timestamp = new Date().toLocaleTimeString();
-        const newLog = { timestamp, message: `Sending prompt:\n${prompt}` };
+        const newLog = { timestamp, title, details };
         setLogs(prevLogs => [...prevLogs, newLog]);
     };
 
@@ -397,8 +392,18 @@ const App: React.FC = () => {
             }
         }
         
+        const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a solid magenta background (color #FF00FF). The background must be pure, solid magenta. Do not include any text, labels, or other elements in the image.`;
+        
         try {
-            const newSpriteBase64 = await generateBaseCharacter(initialPrompt, contextImage, spriteSize, addLog);
+            const specialInstructions = `Perspective is top-down facing front. The character should fill the frame as much as possible. If the character has feet, they should touch the bottom border of the image. The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
+            const baseCharPrompt = `${initialPrompt}. ${specialInstructions} ${basePromptEnhancer}`;
+
+            addLog('Generating Base Character', {
+                'Description': `"${initialPrompt}"`,
+                'Prompt': `"${baseCharPrompt}"`
+            });
+
+            const newSpriteBase64 = await generateBaseCharacter(initialPrompt, contextImage, spriteSize);
             const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
             const previewUrl = await removeMagentaBackground(imageUrl);
             const newBaseChar = { imageUrl, previewUrl, prompt: initialPrompt };
@@ -407,6 +412,11 @@ const App: React.FC = () => {
             // If it's a new design, generate a name and set up the design ID
             if (!currentDesignId) {
                 setLoadingMessage('Generating design name...');
+                const nameGenPrompt = `Generate a very short, cool, and memorable name (2-3 words max) for a game character based on the following description. Return only the name, with no extra text or quotes.\n\nDescription: "${initialPrompt}"`;
+                addLog('Generating Design Name', {
+                    'Description': `"${initialPrompt}"`,
+                    'Prompt': `"${nameGenPrompt}"`
+                });
                 const name = await generateDesignName(initialPrompt);
                 setDesignName(name);
                 setCurrentDesignId(Date.now().toString());
@@ -498,12 +508,17 @@ const App: React.FC = () => {
         setSpriteGrid(newGrid);
 
         const contextImages: { mimeType: string; data: string }[] = [{ mimeType: 'image/png', data: baseCharacter.imageUrl.split(',')[1] }];
+        const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a solid magenta background (color #FF00FF). The background must be pure, solid magenta. Do not include any text, labels, or other elements in the image.`;
     
         try {
             let currentRowIndex = 0;
             for (let poseIndex = 0; poseIndex < numPoses; poseIndex++) {
                 const pose = animationPoses[poseIndex];
+                const totalViewpointsForPose = pose.viewpoints.length;
+
                 for (let frameIndex = 0; frameIndex < framesPerPose; frameIndex++) {
+                    let generatedViewpointsForFrame = 0;
+
                     for (let colIndex = 0; colIndex < numCols; colIndex++) {
                         const viewpoint = fixedViewpoints[colIndex];
                         
@@ -511,6 +526,8 @@ const App: React.FC = () => {
                             continue; // Skip generation if viewpoint is not selected for this pose
                         }
                         
+                        generatedViewpointsForFrame++;
+
                         // INTELLIGENT FLIP: If generating 'right' view, flip the 'left' view instead of asking the AI.
                         // This overcomes model bias and ensures perfect symmetry.
                         if (viewpoint === 'right' && pose.viewpoints.includes('left')) {
@@ -519,6 +536,14 @@ const App: React.FC = () => {
 
                             if (leftSprite) {
                                 setLoadingMessage(`Pose: ${pose.name}, View: right (flipping)`);
+
+                                addLog('Generating Sprite', {
+                                    'Design': designName,
+                                    'Pose': pose.name,
+                                    'Frame': generateAnimation ? `${frameIndex + 1}/${frameCount}` : undefined,
+                                    'Viewpoint': viewpoint,
+                                    'Method': 'Flipped from "left" viewpoint for symmetry. No AI call made.',
+                                });
                                 
                                 const [flippedImageUrl, flippedPreviewUrl] = await Promise.all([
                                     flipImageHorizontally(leftSprite.imageUrl),
@@ -546,10 +571,23 @@ const App: React.FC = () => {
                             : `in a static "${poseDescription}" pose`;
                         
                         const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite. The character is ${baseCharacter.prompt}. The character is ${animationState}, facing ${viewpoint}. Maintain a consistent character design based on the provided context images.`;
+                        const fullPrompt = `${prompt}. ${basePromptEnhancer} The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
                         
-                        setLoadingMessage(`Pose: ${pose.name} (${poseIndex + 1}/${numPoses}), Frame: ${frameIndex + 1}/${framesPerPose}, View: ${viewpoint}`);
+                        let loadingMsg = `Pose: ${pose.name} (${poseIndex + 1}/${numPoses})`;
+                        if (generateAnimation) {
+                            loadingMsg += `, Frame: ${frameIndex + 1}/${frameCount}`;
+                        }
+                        loadingMsg += `, View: ${viewpoint} (${generatedViewpointsForFrame}/${totalViewpointsForPose})`;
+                        setLoadingMessage(loadingMsg);
                         
-                        const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize, addLog);
+                        addLog('Generating Sprite', {
+                            'Design': designName,
+                            'Pose': pose.name,
+                            'Frame': generateAnimation ? `${frameIndex + 1}/${frameCount}` : undefined,
+                            'Viewpoint': viewpoint,
+                            'Prompt': `"${fullPrompt}"`,
+                        });
+                        const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize);
                         const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
                         const previewUrl = await removeMagentaBackground(imageUrl);
                         
@@ -557,7 +595,7 @@ const App: React.FC = () => {
                             id: `${currentRowIndex}-${colIndex}`,
                             imageUrl: imageUrl,
                             previewUrl: previewUrl,
-                            prompt: prompt
+                            prompt: fullPrompt
                         };
     
                         newGrid[currentRowIndex][colIndex] = newSprite;
@@ -613,9 +651,24 @@ const App: React.FC = () => {
         }
     
         const contextSprites = spriteGrid.flat().filter(sprite => sprite && sprite.id !== effectiveTargetSprite.id).slice(0, 5) as Sprite[];
+        const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a solid magenta background (color #FF00FF). The background must be pure, solid magenta. Do not include any text, labels, or other elements in the image.`;
         
         try {
-            const editedSpriteBase64 = await editSprite(editPrompt, effectiveTargetSprite, contextSprites, spriteSize, addLog);
+            const framesPerPose = generateAnimation ? frameCount : 1;
+            const poseIndex = Math.floor(row / framesPerPose);
+            const pose = animationPoses[poseIndex];
+            
+            const fullPrompt = `Edit the primary input image based on this instruction: "${editPrompt}". The sprite must maintain the appearance of a ${spriteSize}x${spriteSize} pixel art style. Use the other images as context for the character's consistent design. ${basePromptEnhancer}`;
+
+            addLog('Editing Sprite', {
+                'Design': designName,
+                'Pose': pose.name,
+                'Viewpoint': currentViewpoint,
+                'Instruction': `"${editPrompt}"`,
+                'Prompt': `"${fullPrompt}"`,
+            });
+
+            const editedSpriteBase64 = await editSprite(editPrompt, effectiveTargetSprite, contextSprites, spriteSize);
             const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
             const previewUrl = await removeMagentaBackground(imageUrl);
     

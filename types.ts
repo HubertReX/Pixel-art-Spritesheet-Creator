@@ -1,4 +1,5 @@
 
+
 export interface Sprite {
   id: string;
   imageUrl: string; // base64 data URL with magenta BG
@@ -17,6 +18,12 @@ export interface AnimationPose {
     name: string;
     prompt?: string; // A more detailed prompt for the AI
     viewpoints: string[];
+}
+
+export interface Log {
+    timestamp: string;
+    title: string;
+    details: Record<string, string | undefined>;
 }
 
 export interface Design {
