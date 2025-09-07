@@ -2,26 +2,25 @@
 
 ## my notes
 
+- seeing the first app version was a "wow moment"
+- AI Studio Builder can't pull changes from GitHub - can't work in parallel locally
 - stop thinking "is it technically possible" just tell the model to do it
 - switch yourself to the "design mode"
 - switching from local storage to IndexDB was a "wow moment"
-- seeing the first app version was a "wow moment"
-- AI Studio Builder can't pull changes from GitHub
 - sometimes there are silient errors
 - one time, it cought an console error and suggested to fix it
-- it's not good at creating animations
 - it's not actually creating 32x32 image, but 1024x1024 that imitate pixelart by doubling nearby pixels (not consistent about the multiplicator)
-- fails to generate transparancy (alpha channel), actually usess other format - probably jpeg (antyaliasing)
+- fails to generate transparancy (alpha channel), actually usess other format - probably jpeg (visible antyaliasing)
 - after downsizing, solid colors change to a bunch of similar colors  (not acceptable for pixel art)
-- preserve desgins between app chagnes - ok, bonus timestamp and sorting
-- clean up icons in Design section - figured it out while adding "Export All" by it self
-- several hours of intensive work - no limits, no waiting in que
+- preserve desgins between app chagnes - ok, as a bonus model offered to implement timestamp and sorting
+- wanted to clean up icons in Design section later - model figured it out while adding "Export All" by itself
+- several hours of intensive work - no limits for coding prompts (AI Studio Builder), no waiting in que - just works!
 - in the afternoon, it became slower, one glitch, sometimes says it has impleented something, but nothing is changed
-- save, push, reset the conversation (no clear result, just common sence)
-- base64 custom image not working
-- mixing big new features with quality of life small improvements
-- creative prompt suggestions: add gif animation generation
-- at 17:47 I run out of image generation credits.
+- started using this patern : save app, push to GitHub, reset the conversation (no clear result, just common sence to clear context window)
+- base64 custom background image - after many retries it's still not working
+- another patern: mixing implementation of big new features with small "quality-of-life" improvements - works well
+- creative prompt suggestions: add gif animation generation! Shows deep insight in what we are actually doing!
+- at 17:47 (after almost 8h of work) I run out of image generation credits.
 
 ## examples
 
