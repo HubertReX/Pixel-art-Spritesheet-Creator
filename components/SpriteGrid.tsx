@@ -106,7 +106,7 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({
         <div
             className="inline-grid items-center p-2"
             style={{
-                gridTemplateColumns: `auto repeat(${cols}, minmax(0, 1fr))`,
+                gridTemplateColumns: `auto repeat(${cols}, ${displaySize}px)`,
                 gap: '8px',
             }}
         >
