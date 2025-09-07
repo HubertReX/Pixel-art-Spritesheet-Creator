@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { Design } from '../types';
-import { SaveIcon, PlusIcon, TrashIcon, FolderOpenIcon, CheckIcon, UploadIcon, ExportIcon } from './icons';
+import { SaveIcon, PlusIcon, TrashIcon, CheckIcon, UploadIcon, ExportIcon, ExportAllIcon } from './icons';
 
 interface PersistenceControlsProps {
     designs: Design[];
@@ -12,16 +13,34 @@ interface PersistenceControlsProps {
     onDelete: (id: string) => void;
     onNew: () => void;
     onExport: (id: string) => void;
+    onExportAll: () => void;
     onImport: (file: File) => void;
     saveSuccess: boolean;
 }
 
 const PersistenceControls: React.FC<PersistenceControlsProps> = ({
     designs, currentDesignId, designName, setDesignName,
-    onSave, onLoad, onDelete, onNew, onExport, onImport, saveSuccess
+    onSave, onLoad, onDelete, onNew, onExport, onExportAll, onImport, saveSuccess
 }) => {
     const [isListOpen, setIsListOpen] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
+    const listContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (listContainerRef.current && !listContainerRef.current.contains(event.target as Node)) {
+                setIsListOpen(false);
+            }
+        };
+
+        if (isListOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isListOpen]);
 
     const handleImportClick = () => {
         importInputRef.current?.click();
@@ -61,13 +80,23 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                 >
                     {saveSuccess ? <CheckIcon /> : <SaveIcon />}
                 </button>
-                 <button
-                    onClick={handleImportClick}
-                    title="Import Design"
-                    className="p-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
-                    aria-label="Import Design"
+            </div>
+             <div className="grid grid-cols-3 gap-2">
+                <button
+                    onClick={onNew}
+                    title="New Design"
+                    className="p-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                    aria-label="New Design"
                 >
-                    <UploadIcon />
+                    <PlusIcon /> New
+                </button>
+                <button
+                    onClick={handleImportClick}
+                    title="Import Design(s)"
+                    className="p-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center justify-center gap-2 text-sm"
+                    aria-label="Import Design(s)"
+                >
+                    <UploadIcon /> Import
                 </button>
                  <input
                     type="file"
@@ -77,16 +106,17 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                     onChange={handleFileChange}
                 />
                 <button
-                    onClick={onNew}
-                    title="New Design"
-                    className="p-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-                    aria-label="New Design"
+                    onClick={onExportAll}
+                    title="Export All Designs"
+                    className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 text-sm disabled:bg-gray-500 disabled:opacity-50"
+                    aria-label="Export All Designs"
+                    disabled={designs.length === 0}
                 >
-                    <PlusIcon />
+                    <ExportAllIcon /> Export All
                 </button>
             </div>
 
-            <div>
+            <div ref={listContainerRef}>
                 <button
                     onClick={() => setIsListOpen(!isListOpen)}
                     className="w-full text-left text-sm font-medium p-2 bg-[#282c34] rounded-md hover:bg-gray-700 flex justify-between items-center"
@@ -99,16 +129,22 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                     <ul className="mt-2 bg-[#282c34] p-2 rounded-md max-h-48 overflow-y-auto border border-gray-600">
                         {designs.length > 0 ? (
                             designs.map(d => (
-                                <li key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-gray-700">
-                                    <span className="text-sm truncate" title={d.name}>{d.name}</span>
-                                    <div className="flex gap-2 items-center flex-shrink-0">
-                                        <button onClick={() => onExport(d.id)} title="Export" className="text-gray-300 hover:text-green-400" aria-label={`Export ${d.name}`}>
+                                <li 
+                                    key={d.id} 
+                                    className="flex justify-between items-center p-2 rounded-md hover:bg-gray-700 group"
+                                >
+                                    <span 
+                                        className="text-sm truncate cursor-pointer flex-grow" 
+                                        title={d.name}
+                                        onClick={() => onLoad(d.id)}
+                                    >
+                                        {d.name}
+                                    </span>
+                                    <div className="flex gap-2 items-center flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={(e) => { e.stopPropagation(); onExport(d.id); }} title="Export" className="text-gray-300 hover:text-green-400" aria-label={`Export ${d.name}`}>
                                             <ExportIcon />
                                         </button>
-                                        <button onClick={() => onLoad(d.id)} title="Load" className="text-gray-300 hover:text-cyan-400" aria-label={`Load ${d.name}`}>
-                                            <FolderOpenIcon />
-                                        </button>
-                                        <button onClick={() => onDelete(d.id)} title="Delete" className="text-gray-300 hover:text-red-400" aria-label={`Delete ${d.name}`}>
+                                        <button onClick={(e) => { e.stopPropagation(); onDelete(d.id); }} title="Delete" className="text-gray-300 hover:text-red-400" aria-label={`Delete ${d.name}`}>
                                             <TrashIcon />
                                         </button>
                                     </div>

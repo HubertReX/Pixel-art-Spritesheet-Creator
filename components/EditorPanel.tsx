@@ -14,8 +14,20 @@ const EditorPanel: React.FC<EditorPanelProps> = ({ sprite, onEdit, onClose, isEd
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onEdit(editPrompt);
-        setEditPrompt('');
+        if (editPrompt && !isEditing) {
+            onEdit(editPrompt);
+            setEditPrompt('');
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+            e.preventDefault();
+            if (editPrompt && !isEditing) {
+                onEdit(editPrompt);
+                setEditPrompt('');
+            }
+        }
     };
 
     return (
@@ -31,14 +43,18 @@ const EditorPanel: React.FC<EditorPanelProps> = ({ sprite, onEdit, onClose, isEd
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-2">
                 <label htmlFor="editPrompt" className="block text-sm font-medium text-gray-300">Edit Instruction</label>
-                <textarea
-                    id="editPrompt"
-                    rows={3}
-                    value={editPrompt}
-                    onChange={(e) => setEditPrompt(e.target.value)}
-                    placeholder="e.g., change the cape color to blue"
-                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-                />
+                <div>
+                    <textarea
+                        id="editPrompt"
+                        rows={3}
+                        value={editPrompt}
+                        onChange={(e) => setEditPrompt(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="e.g., change the cape color to blue"
+                        className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    />
+                    <p className="text-xs text-gray-500 text-right mt-1">Ctrl+Enter to regenerate</p>
+                </div>
                 <button
                     type="submit"
                     disabled={isEditing || !editPrompt}

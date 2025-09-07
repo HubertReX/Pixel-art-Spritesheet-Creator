@@ -1,3 +1,4 @@
+
 import Dexie, { type Table } from 'dexie';
 import { Design } from '../types';
 
@@ -11,17 +12,30 @@ export class SpriteArtisanDB extends Dexie {
     (this as Dexie).version(1).stores({
       designs: 'id, name' // Primary key 'id', and index 'name' for sorting.
     });
+
+    // Version 2: Add timestamps for creation and modification.
+    (this as Dexie).version(2).stores({
+        designs: 'id, name, lastModified' // Add lastModified to indexes for sorting
+    }).upgrade(tx => {
+        // This upgrade function is called when a client has a db version < 2.
+        // We add the new timestamp properties to all existing designs.
+        const now = Date.now();
+        return tx.table('designs').toCollection().modify(design => {
+            design.createdAt = design.createdAt || now;
+            design.lastModified = design.lastModified || now;
+        });
+    });
   }
 }
 
 export const db = new SpriteArtisanDB();
 
 /**
- * Fetches all designs from the database, sorted by name.
+ * Fetches all designs from the database, sorted by last modified date (descending).
  * @returns A promise that resolves to an array of designs.
  */
 export const getAllDesigns = async (): Promise<Design[]> => {
-    return await db.designs.orderBy('name').toArray();
+    return await db.designs.orderBy('lastModified').reverse().toArray();
 };
 
 /**
@@ -32,6 +46,15 @@ export const getAllDesigns = async (): Promise<Design[]> => {
  */
 export const saveDesign = async (design: Design): Promise<void> => {
     await db.designs.put(design);
+};
+
+/**
+ * Saves or updates multiple designs in the database efficiently.
+ * @param designs An array of design objects to save.
+ * @returns A promise that resolves when the operation is complete.
+ */
+export const bulkSaveDesigns = async (designs: Design[]): Promise<void> => {
+    await db.designs.bulkPut(designs);
 };
 
 /**

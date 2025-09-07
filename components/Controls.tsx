@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { GenerateIcon, ExportIcon } from './icons';
 
@@ -38,6 +39,9 @@ const Controls: React.FC<ControlsProps> = ({
             : [...selectedViewpoints, viewpoint];
         setSelectedViewpoints(newSelection);
     };
+
+    const handleSelectAll = () => setSelectedViewpoints(allViewpoints);
+    const handleDeselectAll = () => setSelectedViewpoints([]);
     
     return (
         <div className="flex flex-col gap-4">
@@ -106,7 +110,14 @@ const Controls: React.FC<ControlsProps> = ({
 
             <div className="border-t border-gray-600 pt-4 flex flex-col gap-4">
                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">A. Select Viewpoints</label>
+                    <div className="flex justify-between items-baseline mb-2">
+                        <label className="text-sm font-medium text-gray-300">A. Select Viewpoints</label>
+                        <div className="text-xs">
+                            <button onClick={handleSelectAll} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">all</button>
+                            <span className="text-gray-500 mx-1">/</span>
+                            <button onClick={handleDeselectAll} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">none</button>
+                        </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                         {allViewpoints.map(vp => (
                             <label key={vp} className="flex items-center space-x-2 text-sm cursor-pointer">

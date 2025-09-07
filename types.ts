@@ -22,4 +22,6 @@ export interface Design {
     selectedViewpoints: string[];
     baseCharacter: BaseCharacter | null;
     spriteGrid: (Sprite | null)[][];
+    createdAt: number;
+    lastModified: number;
 }

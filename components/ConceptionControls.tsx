@@ -24,6 +24,21 @@ const ConceptionControls: React.FC<ConceptionControlsProps> = ({
         }
     };
 
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+            e.preventDefault();
+            if (!isGenerating && (prompt || hasBaseCharacter)) {
+                onGenerate();
+            }
+        }
+    };
+
+    const suggestions = [
+        { name: 'glowing ghost', prompt: 'a floating, glowy ghost, similar to the ones in PacMan game' },
+        { name: 'dark warrior', prompt: 'cartoonish, sharp, Japanese, shadow warrior with long katana and thin legs. Simple design, limit color palette to 6' },
+        { name: 'silly dragon', prompt: 'cartoonish, silly dragon, with a big belly' }
+    ];
+
     return (
         <div className="flex flex-col gap-4">
             <h2 className="text-lg font-bold text-cyan-400 border-b border-gray-600 pb-2">1. Create Base Character</h2>
@@ -49,9 +64,24 @@ const ConceptionControls: React.FC<ConceptionControlsProps> = ({
                     rows={4}
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={handleKeyDown}
                     placeholder="A brave knight with shiny silver armor. Use a top-down view, character facing front, with the character's feet at the bottom of the frame. Use few colors. Make it clean, with out too many details."
                     className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
                 />
+                <p className="text-xs text-gray-500 text-right mt-1">Ctrl+Enter to generate</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+                {suggestions.map((suggestion) => (
+                    <button
+                        key={suggestion.name}
+                        onClick={() => setPrompt(suggestion.prompt)}
+                        title={suggestion.prompt}
+                        className="px-3 py-1 text-xs font-semibold text-cyan-300 bg-[#282c34] border border-gray-600 rounded-full hover:bg-cyan-600 hover:text-white transition-colors"
+                    >
+                        {suggestion.name}
+                    </button>
+                ))}
             </div>
 
             <div>

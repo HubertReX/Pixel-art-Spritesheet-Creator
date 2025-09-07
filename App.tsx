@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+
+
+import React, { useState, useEffect, useRef } from 'react';
 import { Sprite, Design, BaseCharacter } from './types';
 import { generateBaseCharacter, generateSprite, editSprite, generateDesignName } from './services/geminiService';
 import { fileToBase64, combineSprites, removeMagentaBackground } from './utils/imageUtils';
-import { getAllDesigns, saveDesign, deleteDesign } from './services/db';
+import { getAllDesigns, saveDesign, deleteDesign, bulkSaveDesigns } from './services/db';
 
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
@@ -25,6 +27,7 @@ const App: React.FC = () => {
     // Design State
     const [savedDesigns, setSavedDesigns] = useState<Design[]>([]);
     const [currentDesignId, setCurrentDesignId] = useState<string | null>(null);
+    const [currentDesignCreatedAt, setCurrentDesignCreatedAt] = useState<number | null>(null);
     const [designName, setDesignName] = useState<string>('');
     const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
     
@@ -34,6 +37,7 @@ const App: React.FC = () => {
     const [initialPrompt, setInitialPrompt] = useState<string>('');
     const [initialImage, setInitialImage] = useState<File | null>(null);
     const [spriteGrid, setSpriteGrid] = useState<(Sprite | null)[][]>([]);
+    const [spriteGridViewpoints, setSpriteGridViewpoints] = useState<string[]>([]);
     const [selectedViewpoints, setSelectedViewpoints] = useState<string[]>(['front']);
     const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
     const [animationType, setAnimationType] = useState<string>('walk');
@@ -44,12 +48,40 @@ const App: React.FC = () => {
     const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [selectedSprite, setSelectedSprite] = useState<{ row: number; col: number } | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [zoomLevel, setZoomLevel] = useState<number>(32);
+    const [zoomLevel, setZoomLevel] = useState<number>(16);
     const [previewZoom, setPreviewZoom] = useState<number>(4);
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
     const [logs, setLogs] = useState<Log[]>([]);
 
+    const previewContainerRef = useRef<HTMLDivElement>(null);
     const allViewpoints = ['front', 'back', 'left', 'right'];
+
+    // Auto-zoom effect
+    useEffect(() => {
+        if (workflowStage === 'spritesheet' && spriteGrid.length > 0 && previewContainerRef.current) {
+            const rows = spriteGrid.length;
+            const cols = spriteGrid[0]?.length || 0;
+            if (rows === 0 || cols === 0) return;
+
+            const container = previewContainerRef.current;
+            // Generous buffer for container padding, grid gaps, and headers
+            const PADDING_BUFFER = 80;
+            const containerWidth = container.clientWidth - PADDING_BUFFER;
+            const containerHeight = container.clientHeight - PADDING_BUFFER;
+
+            const gridPixelWidth = cols * spriteSize;
+            const gridPixelHeight = rows * spriteSize;
+
+            if (gridPixelWidth <= 0 || gridPixelHeight <= 0) return;
+
+            const zoomX = containerWidth / gridPixelWidth;
+            const zoomY = containerHeight / gridPixelHeight;
+
+            const newZoom = Math.max(1, Math.floor(Math.min(zoomX, zoomY)));
+            setZoomLevel(newZoom);
+        }
+    }, [spriteGrid, spriteSize, workflowStage]);
+
 
     // Load saved designs from IndexedDB on initial render
     useEffect(() => {
@@ -73,11 +105,13 @@ const App: React.FC = () => {
 
     const resetToNewDesign = () => {
         setCurrentDesignId(null);
+        setCurrentDesignCreatedAt(null);
         setDesignName('');
         setInitialPrompt('');
         setInitialImage(null);
         setBaseCharacter(null);
         setSpriteGrid([]);
+        setSpriteGridViewpoints([]);
         setSpriteSize(32);
         setFrameCount(4);
         setSelectedViewpoints(['front']);
@@ -97,7 +131,8 @@ const App: React.FC = () => {
             setError("A design must be created and have a name before it can be saved.");
             return;
         }
-
+        
+        const now = Date.now();
         const designData: Design = {
             id: currentDesignId,
             name: designName,
@@ -109,10 +144,15 @@ const App: React.FC = () => {
             selectedViewpoints,
             baseCharacter,
             spriteGrid,
+            createdAt: currentDesignCreatedAt || now,
+            lastModified: now,
         };
 
         try {
             await saveDesign(designData);
+            if (!currentDesignCreatedAt) {
+                setCurrentDesignCreatedAt(now);
+            }
             const updatedDesigns = await getAllDesigns(); // Re-fetch to get sorted list
             setSavedDesigns(updatedDesigns);
             setError(null);
@@ -128,6 +168,7 @@ const App: React.FC = () => {
         const designToLoad = savedDesigns.find(d => d.id === id);
         if (designToLoad) {
             setCurrentDesignId(designToLoad.id);
+            setCurrentDesignCreatedAt(designToLoad.createdAt);
             setDesignName(designToLoad.name);
             setInitialPrompt(designToLoad.prompt);
             setSpriteSize(designToLoad.spriteSize);
@@ -137,6 +178,7 @@ const App: React.FC = () => {
             setSelectedViewpoints(designToLoad.selectedViewpoints);
             setBaseCharacter(designToLoad.baseCharacter);
             setSpriteGrid(designToLoad.spriteGrid);
+            setSpriteGridViewpoints(designToLoad.selectedViewpoints);
             
             setWorkflowStage(designToLoad.baseCharacter ? 'spritesheet' : 'conception');
             setSelectedSprite(null);
@@ -187,6 +229,39 @@ const App: React.FC = () => {
         }
     };
 
+    const handleExportAllDesigns = async () => {
+        setError(null);
+        try {
+            const allDesigns = await getAllDesigns();
+            if (allDesigns.length === 0) {
+                alert("There are no designs to export.");
+                return;
+            }
+
+            const backupData = {
+                source: "pixel-art-spritesheet-creator-backup",
+                version: 2, // Corresponds to DB version
+                designs: allDesigns,
+            };
+
+            const jsonString = JSON.stringify(backupData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.download = `pixel-art-spritesheet-backup-${timestamp}.json`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+
+        } catch (err) {
+            console.error(err);
+            setError(`Failed to export all designs: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+    };
+
     const handleImportDesign = async (file: File) => {
         setError(null);
         if (!file.name.endsWith('.json')) {
@@ -198,20 +273,41 @@ const App: React.FC = () => {
             const jsonString = await file.text();
             const importedObject = JSON.parse(jsonString);
 
-            // Basic validation
-            if (!importedObject || typeof importedObject.name !== 'string' || !Array.isArray(importedObject.spriteGrid)) {
+            let designsToImport: Design[] = [];
+
+            // Case 1: It's a full backup file
+            if (importedObject.source === "pixel-art-spritesheet-creator-backup" && Array.isArray(importedObject.designs)) {
+                designsToImport = importedObject.designs;
+                 // Ensure imported designs have necessary fields from latest schema
+                designsToImport.forEach(d => {
+                    d.createdAt = d.createdAt || Date.now();
+                    d.lastModified = d.lastModified || Date.now();
+                });
+            } 
+            // Case 2: It's a single design file
+            else if (typeof importedObject.name === 'string' && Array.isArray(importedObject.spriteGrid)) {
+                const now = Date.now();
+                const newDesign: Design = { 
+                    ...importedObject, 
+                    id: importedObject.id || now.toString(), // Keep original ID or create new
+                    createdAt: importedObject.createdAt || now,
+                    lastModified: now,
+                };
+                designsToImport.push(newDesign);
+            } else {
                 throw new Error("The imported file has an invalid format.");
             }
             
-            // Assign a new unique ID to prevent conflicts
-            const newDesign: Design = { ...importedObject, id: Date.now().toString() };
-
-            await saveDesign(newDesign);
-            const updatedDesigns = await getAllDesigns();
-            setSavedDesigns(updatedDesigns);
-            
-            // Automatically load the newly imported design
-            handleLoadDesign(newDesign.id);
+            if (designsToImport.length > 0) {
+                await bulkSaveDesigns(designsToImport);
+                const updatedDesigns = await getAllDesigns();
+                setSavedDesigns(updatedDesigns);
+                
+                // If it was a single import, automatically load it
+                if (designsToImport.length === 1) {
+                    handleLoadDesign(designsToImport[0].id);
+                }
+            }
 
         } catch (err) {
             console.error(err);
@@ -270,6 +366,7 @@ const App: React.FC = () => {
             setWorkflowStage('spritesheet');
             setError(null);
             setSpriteGrid([]);
+            setSpriteGridViewpoints([]);
             setSelectedSprite(null);
         }
     };
@@ -290,11 +387,13 @@ const App: React.FC = () => {
 
         setIsLoading(true);
         setError(null);
+        
+        const viewpointsToGenerate = allViewpoints.filter(vp => selectedViewpoints.includes(vp));
         setSpriteGrid([]);
+        setSpriteGridViewpoints(viewpointsToGenerate);
         setSelectedSprite(null);
         
         const numRows = generateAnimation ? frameCount : 1;
-        const viewpointsToGenerate = allViewpoints.filter(vp => selectedViewpoints.includes(vp));
         const numCols = viewpointsToGenerate.length;
 
         const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
@@ -413,6 +512,7 @@ const App: React.FC = () => {
                         onDelete={handleDeleteDesign}
                         onNew={handleNewDesign}
                         onExport={handleExportDesign}
+                        onExportAll={handleExportAllDesigns}
                         onImport={handleImportDesign}
                         saveSuccess={saveSuccess}
                     />
@@ -485,7 +585,7 @@ const App: React.FC = () => {
                     </div>
                    )}
 
-                    <div className="flex-grow w-full flex items-center justify-center checkerboard p-2 rounded-md overflow-auto">
+                    <div ref={previewContainerRef} className="flex-grow w-full flex items-center justify-center checkerboard p-2 rounded-md overflow-auto">
                          {workflowStage === 'conception' ? (
                             <CharacterPreview imageUrl={baseCharacter?.previewUrl || null} />
                          ) : (
@@ -495,6 +595,8 @@ const App: React.FC = () => {
                                 onSpriteSelect={handleSpriteSelect}
                                 selectedSprite={selectedSprite}
                                 zoomLevel={zoomLevel}
+                                viewpoints={spriteGridViewpoints}
+                                isAnimated={generateAnimation}
                             />
                          )}
                     </div>
