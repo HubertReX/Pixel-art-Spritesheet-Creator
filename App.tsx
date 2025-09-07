@@ -1,11 +1,27 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Sprite } from './types';
-import { generateSprite, editSprite } from './services/geminiService';
+import { generateBaseCharacter, generateSprite, editSprite } from './services/geminiService';
 import { fileToBase64, combineSprites, removeMagentaBackground } from './utils/imageUtils';
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
 import EditorPanel from './components/EditorPanel';
 import { LoadingIcon } from './components/icons';
+import ConceptionControls from './components/ConceptionControls';
+import CharacterPreview from './components/CharacterPreview';
+import LogConsole from './components/LogConsole';
+
+type WorkflowStage = 'conception' | 'spritesheet';
+
+interface BaseCharacter {
+    imageUrl: string;
+    previewUrl: string;
+    prompt: string;
+}
+
+interface Log {
+    timestamp: string;
+    message: string;
+}
 
 const App: React.FC = () => {
     const [spriteSize, setSpriteSize] = useState<number>(32);
@@ -21,12 +37,75 @@ const App: React.FC = () => {
     const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
     const [animationType, setAnimationType] = useState<string>('walk');
     const [zoomLevel, setZoomLevel] = useState<number>(32);
+    const [previewZoom, setPreviewZoom] = useState<number>(4);
+    
+    const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
+    const [baseCharacter, setBaseCharacter] = useState<BaseCharacter | null>(null);
+    const [logs, setLogs] = useState<Log[]>([]);
 
     const allViewpoints = ['front', 'back', 'left', 'right'];
 
-    const handleGenerate = async () => {
+    const addLog = (prompt: string) => {
+        const timestamp = new Date().toLocaleTimeString();
+        const newLog = { timestamp, message: `Sending prompt:\n${prompt}` };
+        setLogs(prevLogs => [...prevLogs, newLog]);
+    };
+
+    const handleGenerateBaseCharacter = async () => {
         if (!initialPrompt && !initialImage) {
             setError('Please provide a text description or an image.');
+            return;
+        }
+        setIsLoading(true);
+        setError(null);
+        setLoadingMessage('Generating base character...');
+
+        let contextImage: { mimeType: string; data: string } | null = null;
+        if (initialImage) {
+            try {
+                const base64Image = await fileToBase64(initialImage);
+                contextImage = { mimeType: initialImage.type, data: base64Image.split(',')[1] };
+            } catch (err) {
+                setError('Failed to read the initial image.');
+                setIsLoading(false);
+                return;
+            }
+        }
+        
+        try {
+            const newSpriteBase64 = await generateBaseCharacter(initialPrompt, contextImage, spriteSize, addLog);
+            const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
+            const previewUrl = await removeMagentaBackground(imageUrl);
+            setBaseCharacter({
+                imageUrl,
+                previewUrl,
+                prompt: initialPrompt
+            });
+        } catch (err) {
+            console.error(err);
+            setError(`An error occurred during generation: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
+            setIsLoading(false);
+            setLoadingMessage('');
+        }
+    };
+
+    const handleProceedToSpritesheet = () => {
+        if (baseCharacter) {
+            setWorkflowStage('spritesheet');
+            setError(null);
+            setSpriteGrid([]);
+            setSelectedSprite(null);
+        }
+    };
+
+    const handleBackToConception = () => {
+        setWorkflowStage('conception');
+    };
+
+    const handleGenerateSpritesheet = async () => {
+        if (!baseCharacter) {
+            setError('No base character found.');
             return;
         }
         if (selectedViewpoints.length === 0) {
@@ -44,18 +123,7 @@ const App: React.FC = () => {
         const numCols = viewpointsToGenerate.length;
 
         const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
-        const contextImages: { mimeType: string; data: string }[] = [];
-        
-        if (initialImage) {
-            try {
-                const base64Image = await fileToBase64(initialImage);
-                contextImages.push({ mimeType: initialImage.type, data: base64Image.split(',')[1] });
-            } catch (err) {
-                setError('Failed to read the initial image.');
-                setIsLoading(false);
-                return;
-            }
-        }
+        const contextImages: { mimeType: string; data: string }[] = [{ mimeType: 'image/png', data: baseCharacter.imageUrl.split(',')[1] }];
 
         try {
             for (let row = 0; row < numRows; row++) {
@@ -63,11 +131,11 @@ const App: React.FC = () => {
                     const viewpoint = viewpointsToGenerate[col];
                     const animationState = !generateAnimation || row === 0 ? 'standing still' : `in a ${animationType} animation (frame ${row + 1} of ${frameCount})`;
                     
-                    const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite for a top-down view game. The character is ${initialPrompt}. The character is facing ${viewpoint} and is ${animationState}. Maintain a consistent character design based on the provided context images.`;
+                    const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite. The character is ${baseCharacter.prompt}. The character is facing ${viewpoint} and is ${animationState}. Maintain a consistent character design based on the provided context images.`;
                     
                     setLoadingMessage(`Generating... Frame ${row + 1}/${numRows}, View: ${viewpoint}`);
                     
-                    const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize);
+                    const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize, addLog);
                     const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
                     const previewUrl = await removeMagentaBackground(imageUrl);
                     
@@ -109,11 +177,10 @@ const App: React.FC = () => {
         setError(null);
         setLoadingMessage(`Editing sprite...`);
 
-        // Gather context: sprites from the same row and column for better consistency
         const contextSprites = spriteGrid.flat().filter(sprite => sprite && sprite.id !== targetSprite.id).slice(0, 5) as Sprite[];
         
         try {
-            const editedSpriteBase64 = await editSprite(editPrompt, targetSprite, contextSprites, spriteSize);
+            const editedSpriteBase64 = await editSprite(editPrompt, targetSprite, contextSprites, spriteSize, addLog);
             const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
             const previewUrl = await removeMagentaBackground(imageUrl);
 
@@ -146,10 +213,10 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="bg-[#282c34] min-h-screen text-gray-200 font-mono flex flex-col p-4 gap-4">
+        <div className="bg-[#282c34] min-h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
             <header className="text-center border-b border-gray-600 pb-2">
                 <h1 className="text-2xl font-bold text-cyan-400">Pixel Sprite Artisan AI</h1>
-                <p className="text-sm text-gray-400">Create game-ready sprite sheets with Nano Banana</p>
+                <p className="text-sm text-gray-400">Create game-ready sprite sheets with AI</p>
             </header>
 
             {isLoading && (
@@ -161,40 +228,56 @@ const App: React.FC = () => {
 
             <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-1 bg-[#3a3f4a] p-4 rounded-md flex flex-col gap-4 border border-gray-600 h-fit">
-                    <Controls
-                        spriteSize={spriteSize}
-                        setSpriteSize={setSpriteSize}
-                        frameCount={frameCount}
-                        setFrameCount={setFrameCount}
-                        initialPrompt={initialPrompt}
-                        setInitialPrompt={setInitialPrompt}
-                        setInitialImage={setInitialImage}
-                        onGenerate={handleGenerate}
-                        isGenerating={isLoading}
-                        hasContent={spriteGrid.length > 0}
-                        onExport={handleExport}
-                        selectedViewpoints={selectedViewpoints}
-                        setSelectedViewpoints={setSelectedViewpoints}
-                        generateAnimation={generateAnimation}
-                        setGenerateAnimation={setGenerateAnimation}
-                        animationType={animationType}
-                        setAnimationType={setAnimationType}
-                    />
-                    {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
-
-                    {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
-                        <EditorPanel
-                            sprite={spriteGrid[selectedSprite.row][selectedSprite.col]!}
-                            onEdit={handleEdit}
-                            onClose={() => setSelectedSprite(null)}
-                            isEditing={isLoading}
+                    {workflowStage === 'conception' ? (
+                        <ConceptionControls
+                            prompt={initialPrompt}
+                            setPrompt={setInitialPrompt}
+                            setInitialImage={setInitialImage}
+                            onGenerate={handleGenerateBaseCharacter}
+                            isGenerating={isLoading}
+                            hasBaseCharacter={!!baseCharacter}
+                            onProceed={handleProceedToSpritesheet}
+                            spriteSize={spriteSize}
+                            setSpriteSize={setSpriteSize}
                         />
+                    ) : (
+                        <>
+                            <Controls
+                                spriteSize={spriteSize}
+                                setSpriteSize={setSpriteSize}
+                                frameCount={frameCount}
+                                setFrameCount={setFrameCount}
+                                onGenerate={handleGenerateSpritesheet}
+                                isGenerating={isLoading}
+                                hasContent={spriteGrid.length > 0}
+                                onExport={handleExport}
+                                selectedViewpoints={selectedViewpoints}
+                                setSelectedViewpoints={setSelectedViewpoints}
+                                generateAnimation={generateAnimation}
+                                setGenerateAnimation={setGenerateAnimation}
+                                animationType={animationType}
+                                setAnimationType={setAnimationType}
+                                onBack={handleBackToConception}
+                                baseCharacterPreview={baseCharacter?.previewUrl || ''}
+                                previewZoom={previewZoom}
+                                setPreviewZoom={setPreviewZoom}
+                            />
+                             {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
+                                <EditorPanel
+                                    sprite={spriteGrid[selectedSprite.row][selectedSprite.col]!}
+                                    onEdit={handleEdit}
+                                    onClose={() => setSelectedSprite(null)}
+                                    isEditing={isLoading}
+                                />
+                            )}
+                        </>
                     )}
+                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                 </div>
 
                 <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4">
-                    {/* Zoom Slider */}
-                    <div className="w-full max-w-sm flex items-center gap-4 px-4">
+                   {workflowStage === 'spritesheet' && (
+                     <div className="w-full max-w-sm flex items-center gap-4 px-4">
                         <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
                         <input
                             id="zoom-slider"
@@ -208,19 +291,24 @@ const App: React.FC = () => {
                         />
                         <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
                     </div>
+                   )}
 
-                    {/* Sprite Grid Container */}
                     <div className="flex-grow w-full flex items-center justify-center checkerboard p-2 rounded-md overflow-auto">
-                        <SpriteGrid
-                            grid={spriteGrid}
-                            spriteSize={spriteSize}
-                            onSpriteSelect={handleSpriteSelect}
-                            selectedSprite={selectedSprite}
-                            zoomLevel={zoomLevel}
-                        />
+                         {workflowStage === 'conception' ? (
+                            <CharacterPreview imageUrl={baseCharacter?.previewUrl || null} />
+                         ) : (
+                            <SpriteGrid
+                                grid={spriteGrid}
+                                spriteSize={spriteSize}
+                                onSpriteSelect={handleSpriteSelect}
+                                selectedSprite={selectedSprite}
+                                zoomLevel={zoomLevel}
+                            />
+                         )}
                     </div>
                 </main>
             </div>
+            <LogConsole logs={logs} />
         </div>
     );
 };

@@ -1,0 +1,88 @@
+import React from 'react';
+import { UploadIcon, GenerateIcon } from './icons';
+
+interface ConceptionControlsProps {
+    prompt: string;
+    setPrompt: (prompt: string) => void;
+    setInitialImage: (file: File | null) => void;
+    onGenerate: () => void;
+    isGenerating: boolean;
+    hasBaseCharacter: boolean;
+    onProceed: () => void;
+    spriteSize: number;
+    setSpriteSize: (size: number) => void;
+}
+
+const ConceptionControls: React.FC<ConceptionControlsProps> = ({
+    prompt, setPrompt, setInitialImage, onGenerate, isGenerating,
+    hasBaseCharacter, onProceed, spriteSize, setSpriteSize
+}) => {
+    
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setInitialImage(e.target.files[0]);
+        }
+    };
+
+    return (
+        <div className="flex flex-col gap-4">
+            <h2 className="text-lg font-bold text-cyan-400 border-b border-gray-600 pb-2">1. Create Base Character</h2>
+            <p className="text-sm text-gray-400">Describe your character. You can refine the image until it's perfect before generating the full sprite sheet.</p>
+
+            <div>
+                <label htmlFor="spriteSize" className="block text-sm font-medium text-gray-300 mb-1">Sprite Size (px)</label>
+                <input
+                    type="number"
+                    id="spriteSize"
+                    value={spriteSize}
+                    onChange={(e) => setSpriteSize(parseInt(e.target.value, 10))}
+                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    min="8"
+                    step="8"
+                />
+            </div>
+
+            <div>
+                <label htmlFor="initialPrompt" className="block text-sm font-medium text-gray-300 mb-1">Character Description</label>
+                <textarea
+                    id="initialPrompt"
+                    rows={4}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="A brave knight with shiny silver armor. Use a top-down view, character facing front, with the character's feet at the bottom of the frame. Use few colors. Make it clean, with out too many details."
+                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                />
+            </div>
+
+            <div>
+                <label htmlFor="initialImage" className="block text-sm font-medium text-gray-300 mb-1">...or Upload Reference Image</label>
+                <label className="w-full flex items-center justify-center gap-2 bg-[#282c34] text-gray-300 p-2 rounded-md border-2 border-dashed border-gray-600 cursor-pointer hover:bg-gray-700 hover:border-cyan-500">
+                    <UploadIcon />
+                    <span>Choose File</span>
+                    <input id="initialImage" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                </label>
+            </div>
+            
+            <button
+                onClick={onGenerate}
+                disabled={isGenerating || (!prompt && !hasBaseCharacter)}
+                className="w-full flex items-center justify-center gap-2 bg-cyan-600 text-white font-bold py-2 px-4 rounded-md hover:bg-cyan-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+            >
+                <GenerateIcon />
+                {isGenerating ? 'Generating...' : (hasBaseCharacter ? 'Refine Character' : 'Generate Character')}
+            </button>
+            
+            {hasBaseCharacter && (
+                 <button
+                    onClick={onProceed}
+                    disabled={isGenerating}
+                    className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                >
+                    Next: Create Sprite Sheet &rarr;
+                </button>
+            )}
+        </div>
+    );
+};
+
+export default ConceptionControls;

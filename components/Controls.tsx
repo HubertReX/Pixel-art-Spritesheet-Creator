@@ -1,15 +1,11 @@
-
 import React from 'react';
-import { UploadIcon, GenerateIcon, ExportIcon } from './icons';
+import { GenerateIcon, ExportIcon } from './icons';
 
 interface ControlsProps {
     spriteSize: number;
     setSpriteSize: (size: number) => void;
     frameCount: number;
     setFrameCount: (count: number) => void;
-    initialPrompt: string;
-    setInitialPrompt: (prompt: string) => void;
-    setInitialImage: (file: File | null) => void;
     onGenerate: () => void;
     isGenerating: boolean;
     hasContent: boolean;
@@ -20,23 +16,21 @@ interface ControlsProps {
     setGenerateAnimation: (generate: boolean) => void;
     animationType: string;
     setAnimationType: (type: string) => void;
+    onBack: () => void;
+    baseCharacterPreview: string;
+    previewZoom: number;
+    setPreviewZoom: (zoom: number) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
     spriteSize, setSpriteSize, frameCount, setFrameCount,
-    initialPrompt, setInitialPrompt, setInitialImage,
     onGenerate, isGenerating, hasContent, onExport,
     selectedViewpoints, setSelectedViewpoints, generateAnimation, setGenerateAnimation,
-    animationType, setAnimationType
+    animationType, setAnimationType, onBack, baseCharacterPreview,
+    previewZoom, setPreviewZoom
 }) => {
     
     const allViewpoints = ['front', 'back', 'left', 'right'];
-
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            setInitialImage(e.target.files[0]);
-        }
-    };
 
     const handleViewpointChange = (viewpoint: string) => {
         const newSelection = selectedViewpoints.includes(viewpoint)
@@ -47,7 +41,40 @@ const Controls: React.FC<ControlsProps> = ({
     
     return (
         <div className="flex flex-col gap-4">
-            <h2 className="text-lg font-bold text-cyan-400 border-b border-gray-600 pb-2">Generation Controls</h2>
+            <div className="flex justify-between items-center border-b border-gray-600 pb-2">
+                <h2 className="text-lg font-bold text-cyan-400">2. Generate Sprite Sheet</h2>
+                <button onClick={onBack} className="text-sm text-cyan-400 hover:text-cyan-200">&larr; Back to Design</button>
+            </div>
+            
+            <div className="flex flex-col items-center gap-2 bg-[#282c34] p-2 rounded-md">
+                <p className="text-sm font-medium text-gray-300">Base Character:</p>
+                <div className="w-48 h-48 checkerboard rounded-md overflow-hidden relative border-2 border-gray-500">
+                     <img
+                        src={baseCharacterPreview}
+                        alt="Base Character Preview"
+                        className="transform-gpu absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                        style={{
+                            width: `${spriteSize * previewZoom}px`,
+                            height: `${spriteSize * previewZoom}px`,
+                            imageRendering: 'pixelated'
+                        }}
+                    />
+                </div>
+                <div className="w-full max-w-xs flex items-center gap-2 px-1">
+                    <label htmlFor="preview-zoom-slider" className="text-xs font-medium text-gray-300 whitespace-nowrap">Zoom</label>
+                    <input
+                        id="preview-zoom-slider"
+                        type="range"
+                        min="1"
+                        max="16"
+                        step="1"
+                        value={previewZoom}
+                        onChange={(e) => setPreviewZoom(Number(e.target.value))}
+                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    />
+                    <span className="text-xs font-medium text-gray-300 w-8 text-center">{previewZoom}x</span>
+                </div>
+            </div>
             
             <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -77,30 +104,9 @@ const Controls: React.FC<ControlsProps> = ({
                 </div>
             </div>
 
-            <div>
-                <label htmlFor="initialPrompt" className="block text-sm font-medium text-gray-300 mb-1">Character Description</label>
-                <textarea
-                    id="initialPrompt"
-                    rows={4}
-                    value={initialPrompt}
-                    onChange={(e) => setInitialPrompt(e.target.value)}
-                    placeholder="e.g., A brave knight with shiny silver armor and a red cape"
-                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-                />
-            </div>
-
-            <div>
-                <label htmlFor="initialImage" className="block text-sm font-medium text-gray-300 mb-1">...or Upload Reference Image</label>
-                <label className="w-full flex items-center justify-center gap-2 bg-[#282c34] text-gray-300 p-2 rounded-md border-2 border-dashed border-gray-600 cursor-pointer hover:bg-gray-700 hover:border-cyan-500">
-                    <UploadIcon />
-                    <span>Choose File</span>
-                    <input id="initialImage" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
-                </label>
-            </div>
-            
             <div className="border-t border-gray-600 pt-4 flex flex-col gap-4">
                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">1. Select Viewpoints</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">A. Select Viewpoints</label>
                     <div className="grid grid-cols-2 gap-2">
                         {allViewpoints.map(vp => (
                             <label key={vp} className="flex items-center space-x-2 text-sm cursor-pointer">
@@ -117,7 +123,7 @@ const Controls: React.FC<ControlsProps> = ({
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">2. Animate?</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">B. Animate?</label>
                     <div className="space-y-3">
                         <label className="flex items-center space-x-2 text-sm cursor-pointer">
                             <input
