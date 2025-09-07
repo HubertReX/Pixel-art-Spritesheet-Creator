@@ -22,6 +22,88 @@ import { defaultCustomBackground } from './defaultBackground';
 
 type WorkflowStage = 'conception' | 'spritesheet';
 
+const getAnimationFrameHint = (animationType: string, frameCount: number, frameIndex: number, characterDescription: string): string => {
+    const type = animationType.toLowerCase().trim();
+    const cycle = (descriptions: string[]) => descriptions[frameIndex % descriptions.length];
+
+    // Check for keywords in character description to guess limb presence
+    const hasLegs = !/fish|ghost|snake|worm|jellyfish|floating|bobbing|hovering|no legs/i.test(characterDescription);
+    const hasArms = !/fish|snake|worm|jellyfish|no arms/i.test(characterDescription);
+
+    if (type.includes('walk')) {
+        if (!hasLegs) return 'It is moving forward gently.';
+        
+        // Specific 4-frame cycle based on user request
+        if (frameCount === 4) {
+            return cycle([
+                'left leg is raised forward, mid-stride. Right arm is forward for balance.',
+                'left leg is planted on the ground forward, with the right leg behind. Both feet are on the ground, in a passing pose.',
+                'right leg is raised forward, mid-stride. Left arm is forward for balance.',
+                'right leg is planted on the ground forward, with the left leg behind. Both feet are on the ground, in a passing pose.',
+            ]);
+        }
+        // Generic walk cycle for other frame counts
+        const progress = frameIndex / frameCount;
+        if (progress < 0.5) {
+            return 'The left leg is moving forward in a stride.';
+        } else {
+            return 'The right leg is moving forward in a stride.';
+        }
+    }
+
+    if (type.includes('run')) {
+        if (!hasLegs) return 'It is moving forward rapidly.';
+
+        if (frameCount >= 4) {
+             return cycle([
+                'Sprinting, left leg extended forward, right leg back. Body is leaning forward with high energy.',
+                'In a dynamic mid-air pose between strides, legs are tucked, preparing for the next step.',
+                'Sprinting, right leg extended forward, left leg back. Body is leaning forward with high energy.',
+                'In another dynamic mid-air pose between strides, legs are passing each other.',
+            ]);
+        }
+        const progress = frameIndex / frameCount;
+        if (progress < 0.25) return 'launching into a powerful stride.';
+        if (progress < 0.5) return 'in mid-air, legs passing each other at high speed.';
+        if (progress < 0.75) return 'landing from a stride and absorbing the impact.';
+        return 'pushing off the ground for the next stride.';
+    }
+
+    if (type.includes('attack')) {
+        if (!hasArms) return 'It is lunging forward in an attack.';
+
+        if (frameCount >= 3) {
+            return cycle([
+                'preparing for an attack, winding up and raising a weapon or fist.',
+                'at the peak of the attack swing, weapon or fist is moving forward with maximum force.',
+                'following through with the attack motion, showing the end of the swing.',
+                'recovering from the attack and returning to a ready stance.',
+            ]);
+        }
+        const progress = frameIndex / frameCount;
+        if (progress < 0.33) return 'winding up the attack.';
+        if (progress < 0.66) return 'executing the main strike.';
+        return 'recovering from the attack.';
+    }
+    
+    if (type.includes('idle') || type.includes('float') || type.includes('bob') || type.includes('stand')) {
+        if (frameCount >= 4) {
+            return cycle([
+                'at the lowest point of a gentle bobbing or breathing motion.',
+                'moving slightly upwards.',
+                'at the highest point of its gentle bobbing or breathing motion.',
+                'moving slightly downwards.',
+            ]);
+        }
+        return 'performing a subtle idle animation, with slight movement.'
+    }
+
+    // Generic fallback for unknown animations
+    const progressPercentage = frameCount > 1 ? Math.round(((frameIndex) / (frameCount - 1)) * 100) : 100;
+    return `at approximately ${progressPercentage}% completion of its animation cycle.`;
+};
+
+
 const App: React.FC = () => {
     // Design State
     const [savedDesigns, setSavedDesigns] = useState<Design[]>([]);
@@ -61,6 +143,7 @@ const App: React.FC = () => {
     const [previewBackgroundType, setPreviewBackgroundType] = useState<PreviewBackgroundType>('transparent');
     const [customBackground, setCustomBackground] = useState<string | null>(defaultCustomBackground);
     const [isReskinModalOpen, setIsReskinModalOpen] = useState<boolean>(false);
+    const [animationSpeed, setAnimationSpeed] = useState<number>(4);
 
 
     const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -621,11 +704,15 @@ const App: React.FC = () => {
                         // Use the detailed prompt if available, otherwise fall back to the pose name.
                         const poseDescription = pose.prompt && pose.prompt.trim() !== '' ? pose.prompt : pose.name;
 
-                        const animationState = generateAnimation 
-                            ? `performing a "${poseDescription}" animation (frame ${frameIndex + 1} of ${frameCount})` 
-                            : `in a static "${poseDescription}" pose`;
+                        let animationState;
+                        if (generateAnimation) {
+                            const animationHint = getAnimationFrameHint(poseDescription, frameCount, frameIndex, baseCharacter.prompt);
+                            animationState = `performing a "${poseDescription}" animation (frame ${frameIndex + 1} of ${frameCount}). The character's specific action for this frame is: ${animationHint}`;
+                        } else {
+                            animationState = `in a static "${poseDescription}" pose`;
+                        }
                         
-                        const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite. The character is ${baseCharacter.prompt}. The character is ${animationState}, facing ${viewpoint}. Maintain a consistent character design based on the provided context images.`;
+                        const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite of a character described as "${baseCharacter.prompt}". The character is ${animationState}, facing ${viewpoint}. Maintain a consistent character design based on the provided context images.`;
                         const fullPrompt = `${prompt}. ${basePromptEnhancer} The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
                         
                         let loadingMsg = `Pose: ${pose.name} (${poseIndex + 1}/${numPoses})`;
@@ -1059,19 +1146,37 @@ const App: React.FC = () => {
                             customBackgroundUrl={customBackground}
                         />
                         {workflowStage === 'spritesheet' && (
-                            <div className="w-full max-w-sm flex items-center gap-4 px-4">
-                                <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
-                                <input
-                                    id="zoom-slider"
-                                    type="range"
-                                    min="1"
-                                    max="64"
-                                    step="1"
-                                    value={zoomLevel}
-                                    onChange={(e) => setZoomLevel(Number(e.target.value))}
-                                    className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                                />
-                                <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
+                            <div className="w-full max-w-lg flex flex-col items-center gap-4 px-4">
+                                <div className="w-full flex items-center gap-4">
+                                    <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
+                                    <input
+                                        id="zoom-slider"
+                                        type="range"
+                                        min="1"
+                                        max="64"
+                                        step="1"
+                                        value={zoomLevel}
+                                        onChange={(e) => setZoomLevel(Number(e.target.value))}
+                                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
+                                </div>
+                                {generateAnimation && spriteGrid.length > 0 && frameCount > 1 && (
+                                     <div className="w-full flex items-center gap-4">
+                                        <label htmlFor="speed-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Anim Speed</label>
+                                        <input
+                                            id="speed-slider"
+                                            type="range"
+                                            min="0.5"
+                                            max="8"
+                                            step="0.5"
+                                            value={animationSpeed}
+                                            onChange={(e) => setAnimationSpeed(Number(e.target.value))}
+                                            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                        />
+                                        <span className="text-sm font-medium text-gray-300 w-16 text-center">{animationSpeed.toFixed(1)} FPS</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1098,6 +1203,7 @@ const App: React.FC = () => {
                                 animationPoses={animationPoses}
                                 generateAnimation={generateAnimation}
                                 frameCount={frameCount}
+                                animationSpeed={animationSpeed}
                             />
                          )}
                     </div>
