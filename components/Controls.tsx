@@ -1,18 +1,16 @@
 
+
 import React from 'react';
-import { GenerateIcon, ExportIcon } from './icons';
+import { PlusIcon, MinusIcon, ChevronDownIcon } from './icons';
+import { AnimationPose } from '../types';
 
 interface ControlsProps {
     spriteSize: number;
     setSpriteSize: (size: number) => void;
     frameCount: number;
     setFrameCount: (count: number) => void;
-    onGenerate: () => void;
-    isGenerating: boolean;
-    hasContent: boolean;
-    onExport: () => void;
-    selectedViewpoints: string[];
-    setSelectedViewpoints: (viewpoints: string[]) => void;
+    animationPoses: AnimationPose[];
+    setAnimationPoses: (poses: AnimationPose[]) => void;
     generateAnimation: boolean;
     setGenerateAnimation: (generate: boolean) => void;
     animationType: string;
@@ -21,27 +19,84 @@ interface ControlsProps {
     baseCharacterPreview: string;
     previewZoom: number;
     setPreviewZoom: (zoom: number) => void;
+    onRemovePose: (id: string) => void;
+    expandedPoseIds: string[];
+    setExpandedPoseIds: (ids: React.SetStateAction<string[]>) => void;
+    isAnimationExpanded: boolean;
+    setIsAnimationExpanded: (isExpanded: boolean) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
     spriteSize, setSpriteSize, frameCount, setFrameCount,
-    onGenerate, isGenerating, hasContent, onExport,
-    selectedViewpoints, setSelectedViewpoints, generateAnimation, setGenerateAnimation,
+    animationPoses, setAnimationPoses, generateAnimation, setGenerateAnimation,
     animationType, setAnimationType, onBack, baseCharacterPreview,
-    previewZoom, setPreviewZoom
+    previewZoom, setPreviewZoom, onRemovePose, expandedPoseIds, setExpandedPoseIds,
+    isAnimationExpanded, setIsAnimationExpanded
 }) => {
     
     const allViewpoints = ['front', 'back', 'left', 'right'];
 
-    const handleViewpointChange = (viewpoint: string) => {
-        const newSelection = selectedViewpoints.includes(viewpoint)
-            ? selectedViewpoints.filter(v => v !== viewpoint)
-            : [...selectedViewpoints, viewpoint];
-        setSelectedViewpoints(newSelection);
+    const handlePoseNameChange = (id: string, newName: string) => {
+        setAnimationPoses(animationPoses.map(pose => 
+            pose.id === id ? { ...pose, name: newName } : pose
+        ));
     };
 
-    const handleSelectAll = () => setSelectedViewpoints(allViewpoints);
-    const handleDeselectAll = () => setSelectedViewpoints([]);
+    const handlePosePromptChange = (id: string, newPrompt: string) => {
+        setAnimationPoses(animationPoses.map(pose => 
+            pose.id === id ? { ...pose, prompt: newPrompt } : pose
+        ));
+    };
+
+    const handleViewpointChange = (poseId: string, viewpoint: string) => {
+        setAnimationPoses(animationPoses.map(pose => {
+            if (pose.id === poseId) {
+                const newSelection = pose.viewpoints.includes(viewpoint)
+                    ? pose.viewpoints.filter(v => v !== viewpoint)
+                    : [...pose.viewpoints, viewpoint];
+                return { ...pose, viewpoints: newSelection };
+            }
+            return pose;
+        }));
+    };
+
+    const handleSelectAll = (poseId: string) => {
+         setAnimationPoses(animationPoses.map(pose => 
+            pose.id === poseId ? { ...pose, viewpoints: allViewpoints } : pose
+        ));
+    };
+
+    const handleDeselectAll = (poseId: string) => {
+        setAnimationPoses(animationPoses.map(pose => 
+            pose.id === poseId ? { ...pose, viewpoints: [] } : pose
+        ));
+    };
+
+    const handleAddPose = () => {
+        const newPoseId = Date.now().toString();
+        const newPose: AnimationPose = {
+            id: newPoseId,
+            name: 'Attack',
+            prompt: 'A dynamic attack pose, swinging a weapon.',
+            viewpoints: ['front'],
+        };
+        setAnimationPoses([...animationPoses, newPose]);
+        setExpandedPoseIds(prev => [...prev, newPoseId]);
+    };
+
+    const handleRemovePose = (id: string) => {
+        onRemovePose(id);
+    };
+
+    const togglePoseExpansion = (id: string) => {
+        setExpandedPoseIds(prev =>
+            prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+        );
+    };
+
+    const toggleAnimationExpansion = () => {
+        setIsAnimationExpanded(!isAnimationExpanded);
+    };
     
     return (
         <div className="flex flex-col gap-4">
@@ -80,62 +135,115 @@ const Controls: React.FC<ControlsProps> = ({
                 </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label htmlFor="spriteSize" className="block text-sm font-medium text-gray-300 mb-1">Sprite Size (px)</label>
-                    <input
-                        type="number"
-                        id="spriteSize"
-                        value={spriteSize}
-                        onChange={(e) => setSpriteSize(parseInt(e.target.value, 10))}
-                        className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
-                        min="8"
-                        step="8"
-                    />
-                </div>
-                <div>
-                    <label htmlFor="frameCount" className="block text-sm font-medium text-gray-300 mb-1">Anim Frames</label>
-                    <input
-                        type="number"
-                        id="frameCount"
-                        value={frameCount}
-                        onChange={(e) => setFrameCount(parseInt(e.target.value, 10))}
-                        className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
-                        min="1"
-                        max="16"
-                        disabled={!generateAnimation}
-                    />
-                </div>
+             <div>
+                <label htmlFor="spriteSize" className="block text-sm font-medium text-gray-300 mb-1">Sprite Size (px)</label>
+                <input
+                    type="number"
+                    id="spriteSize"
+                    value={spriteSize}
+                    onChange={(e) => setSpriteSize(parseInt(e.target.value, 10))}
+                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                    min="8"
+                    step="8"
+                />
             </div>
 
             <div className="border-t border-gray-600 pt-4 flex flex-col gap-4">
-                 <div>
-                    <div className="flex justify-between items-baseline mb-2">
-                        <label className="text-sm font-medium text-gray-300">A. Select Viewpoints</label>
-                        <div className="text-xs">
-                            <button onClick={handleSelectAll} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">all</button>
-                            <span className="text-gray-500 mx-1">/</span>
-                            <button onClick={handleDeselectAll} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">none</button>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        {allViewpoints.map(vp => (
-                            <label key={vp} className="flex items-center space-x-2 text-sm cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={selectedViewpoints.includes(vp)}
-                                    onChange={() => handleViewpointChange(vp)}
-                                    className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
-                                />
-                                <span>{vp.charAt(0).toUpperCase() + vp.slice(1)}</span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
+                <h3 className="text-base font-bold text-gray-300">A. Define Poses</h3>
+                <div className="flex flex-col gap-2">
+                    {animationPoses.map((pose, index) => {
+                        const isExpanded = expandedPoseIds.includes(pose.id);
+                        return (
+                            <div key={pose.id} className="bg-[#282c34] p-3 rounded-md border border-gray-600 flex flex-col gap-3 transition-all">
+                                <div
+                                    className="flex justify-between items-center cursor-pointer"
+                                    onClick={() => togglePoseExpansion(pose.id)}
+                                    aria-expanded={isExpanded}
+                                >
+                                    <input
+                                        type="text"
+                                        value={pose.name}
+                                        onChange={(e) => handlePoseNameChange(pose.id, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="bg-transparent text-white font-semibold focus:outline-none focus:bg-gray-800 rounded px-1 -ml-1 w-full"
+                                        aria-label={`Pose name for pose ${index + 1}`}
+                                        disabled={index === 0}
+                                    />
+                                    <div className="flex items-center">
+                                        {index > 0 && ( // Only show remove button for non-default poses
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleRemovePose(pose.id); }} 
+                                                title="Remove Pose" 
+                                                className="text-red-400 hover:text-red-300 p-1 ml-2"
+                                            >
+                                                <MinusIcon />
+                                            </button>
+                                        )}
+                                        <ChevronDownIcon className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                    </div>
+                                </div>
+                                
+                                {isExpanded && (
+                                    <>
+                                        {index > 0 && (
+                                            <div className="flex flex-col gap-1">
+                                                <label htmlFor={`pose-prompt-${pose.id}`} className="text-sm font-medium text-gray-300">Pose Prompt (for AI)</label>
+                                                <textarea
+                                                    id={`pose-prompt-${pose.id}`}
+                                                    rows={2}
+                                                    value={pose.prompt || ''}
+                                                    onChange={(e) => handlePosePromptChange(pose.id, e.target.value)}
+                                                    placeholder="e.g., swinging a heavy two-handed axe"
+                                                    className="w-full bg-gray-800 text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none text-sm"
+                                                />
+                                            </div>
+                                        )}
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">B. Animate?</label>
-                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between items-baseline mb-2">
+                                                <label className="text-sm font-medium text-gray-300">Select Viewpoints</label>
+                                                <div className="text-xs">
+                                                    <button onClick={() => handleSelectAll(pose.id)} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">all</button>
+                                                    <span className="text-gray-500 mx-1">/</span>
+                                                    <button onClick={() => handleDeselectAll(pose.id)} className="text-cyan-400 hover:underline focus:outline-none focus:ring-1 focus:ring-cyan-500 rounded-sm px-1">none</button>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {allViewpoints.map(vp => (
+                                                    <label key={vp} className="flex items-center space-x-2 text-sm cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={pose.viewpoints.includes(vp)}
+                                                            onChange={() => handleViewpointChange(pose.id, vp)}
+                                                            className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                                                        />
+                                                        <span>{vp.charAt(0).toUpperCase() + vp.slice(1)}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )
+                    })}
+                    <button onClick={handleAddPose} className="w-full flex items-center justify-center gap-2 text-sm bg-gray-600 hover:bg-gray-700 text-cyan-300 font-bold py-2 px-4 rounded-md transition-colors">
+                        <PlusIcon/> Add Pose
+                    </button>
+                </div>
+            </div>
+
+            <div className="border-t border-gray-600 pt-4 flex flex-col gap-2">
+                <div
+                    className="flex justify-between items-center cursor-pointer"
+                    onClick={toggleAnimationExpansion}
+                    aria-expanded={isAnimationExpanded}
+                >
+                    <h3 className="text-base font-bold text-gray-300">B. Animate?</h3>
+                    <ChevronDownIcon className={`transform transition-transform duration-200 ${isAnimationExpanded ? 'rotate-180' : ''}`} />
+                </div>
+                {isAnimationExpanded && (
+                     <div className="space-y-3 pt-2">
                         <label className="flex items-center space-x-2 text-sm cursor-pointer">
                             <input
                                 type="checkbox"
@@ -145,40 +253,37 @@ const Controls: React.FC<ControlsProps> = ({
                             />
                             <span>Generate Animation Frames</span>
                         </label>
-                        
-                        <input
-                            type="text"
-                            id="animationType"
-                            aria-label="Animation type"
-                            value={animationType}
-                            onChange={(e) => setAnimationType(e.target.value)}
-                            placeholder="Animation type (e.g. walk, run)"
-                            className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
-                            disabled={!generateAnimation}
-                        />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label htmlFor="frameCount" className="block text-sm font-medium text-gray-300 mb-1">Anim Frames</label>
+                                <input
+                                    type="number"
+                                    id="frameCount"
+                                    value={frameCount}
+                                    onChange={(e) => setFrameCount(parseInt(e.target.value, 10))}
+                                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
+                                    min="1"
+                                    max="16"
+                                    disabled={!generateAnimation}
+                                />
+                            </div>
+                            <div>
+                            <label htmlFor="animationType" className="block text-sm font-medium text-gray-300 mb-1">Animation Type</label>
+                                <input
+                                    type="text"
+                                    id="animationType"
+                                    aria-label="Animation type"
+                                    value={animationType}
+                                    onChange={(e) => setAnimationType(e.target.value)}
+                                    placeholder="e.g. walk, run"
+                                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
+                                    disabled={!generateAnimation}
+                                />
+                            </div>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
-
-            <button
-                onClick={onGenerate}
-                disabled={isGenerating}
-                className="w-full flex items-center justify-center gap-2 bg-cyan-600 text-white font-bold py-2 px-4 rounded-md hover:bg-cyan-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
-            >
-                <GenerateIcon />
-                {isGenerating ? 'Generating...' : 'Generate Sprite Sheet'}
-            </button>
-            
-            {hasContent && (
-                 <button
-                    onClick={onExport}
-                    disabled={isGenerating}
-                    className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
-                >
-                    <ExportIcon />
-                    Export as PNG
-                </button>
-            )}
         </div>
     );
 };

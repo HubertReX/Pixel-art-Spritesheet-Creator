@@ -1,3 +1,4 @@
+
 export interface Sprite {
   id: string;
   imageUrl: string; // base64 data URL with magenta BG
@@ -11,6 +12,13 @@ export interface BaseCharacter {
     prompt: string;
 }
 
+export interface AnimationPose {
+    id: string;
+    name: string;
+    prompt?: string; // A more detailed prompt for the AI
+    viewpoints: string[];
+}
+
 export interface Design {
     id: string;
     name: string;
@@ -19,7 +27,7 @@ export interface Design {
     frameCount: number;
     animationType: string;
     generateAnimation: boolean;
-    selectedViewpoints: string[];
+    animationPoses: AnimationPose[];
     baseCharacter: BaseCharacter | null;
     spriteGrid: (Sprite | null)[][];
     createdAt: number;

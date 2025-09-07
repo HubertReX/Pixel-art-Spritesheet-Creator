@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Sprite } from '../types';
+import { Sprite, AnimationPose } from '../types';
 
 interface SpriteGridProps {
     grid: (Sprite | null)[][];
@@ -9,10 +9,15 @@ interface SpriteGridProps {
     selectedSprite: { row: number; col: number } | null;
     zoomLevel: number;
     viewpoints: string[];
-    isAnimated: boolean;
+    animationPoses: AnimationPose[];
+    generateAnimation: boolean;
+    frameCount: number;
 }
 
-const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelect, selectedSprite, zoomLevel, viewpoints, isAnimated }) => {
+const SpriteGrid: React.FC<SpriteGridProps> = ({ 
+    grid, spriteSize, onSpriteSelect, selectedSprite, zoomLevel, 
+    viewpoints, animationPoses, generateAnimation, frameCount 
+}) => {
     if (grid.length === 0) {
         return (
             <div className="flex items-center justify-center w-full h-64 text-gray-400">
@@ -24,6 +29,21 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelec
     const rows = grid.length;
     const cols = viewpoints.length > 0 ? viewpoints.length : (grid[0]?.length || 0);
     const displaySize = spriteSize * zoomLevel;
+
+    const getRowHeader = (rowIndex: number): string => {
+        const framesPerPose = generateAnimation ? frameCount : 1;
+        if (framesPerPose === 0) return `Row ${rowIndex + 1}`; // Avoid division by zero
+        
+        const poseIndex = Math.floor(rowIndex / framesPerPose);
+        const frameInPose = rowIndex % framesPerPose;
+        const pose = animationPoses[poseIndex];
+
+        if (!pose) return `Row ${rowIndex + 1}`;
+
+        return generateAnimation 
+            ? `${pose.name} ${frameInPose + 1}` 
+            : pose.name;
+    }
 
     return (
         <div
@@ -44,40 +64,42 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({ grid, spriteSize, onSpriteSelec
                 </div>
             ))}
 
-            {/* Rows with headers and sprites, flattened for CSS Grid */}
-            {grid.flatMap((row, rowIndex) => [
-                <div key={`row-header-${rowIndex}`} className="text-right text-gray-400 text-sm font-semibold pr-2 whitespace-nowrap">
-                    {isAnimated ? `Frame ${rowIndex + 1}` : 'Standing'}
-                </div>,
-                ...Array.from({ length: cols }).map((_, colIndex) => {
-                    const sprite = row[colIndex] ?? null;
-                    const isSelected = selectedSprite?.row === rowIndex && selectedSprite?.col === colIndex;
-                    const cellClasses = `w-full h-full flex items-center justify-center border-2 rounded-md
-                        ${isSelected ? 'border-cyan-400' : 'border-transparent'} 
-                        ${sprite ? 'cursor-pointer hover:bg-cyan-500/30' : 'bg-black/20'}`;
+            {/* Rows with headers and sprites */}
+            {grid.map((row, rowIndex) => (
+                <React.Fragment key={`row-fragment-${rowIndex}`}>
+                    <div className="text-right text-gray-400 text-sm font-semibold pr-2 whitespace-nowrap">
+                       {getRowHeader(rowIndex)}
+                    </div>
+                    {Array.from({ length: cols }).map((_, colIndex) => {
+                        const sprite = row[colIndex] ?? null;
+                        const isSelected = selectedSprite?.row === rowIndex && selectedSprite?.col === colIndex;
+                        const cellClasses = `w-full h-full flex items-center justify-center border-2 rounded-md
+                            ${isSelected ? 'border-cyan-400' : 'border-transparent'} 
+                            ${sprite ? 'cursor-pointer hover:bg-cyan-500/30' : 'bg-black/20'}`;
 
-                    return (
-                        <div
-                            key={`${rowIndex}-${colIndex}`}
-                            className={cellClasses}
-                            style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
-                            onClick={() => sprite && onSpriteSelect(rowIndex, colIndex)}
-                            aria-label={`Sprite, row ${rowIndex + 1}, column ${colIndex + 1}`}
-                        >
-                            {sprite ? (
-                                <img
-                                    src={sprite.previewUrl}
-                                    alt={`Sprite ${rowIndex}-${colIndex}`}
-                                    className="w-full h-full object-contain"
-                                    style={{ imageRendering: 'pixelated' }}
-                                />
-                            ) : (
-                                <div className="w-full h-full bg-black/20 rounded-sm" />
-                            )}
-                        </div>
-                    );
-                })
-            ])}
+                        return (
+                            <div
+                                key={`${rowIndex}-${colIndex}`}
+                                className={cellClasses}
+                                style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
+                                onClick={() => sprite && onSpriteSelect(rowIndex, colIndex)}
+                                aria-label={`Sprite, row ${rowIndex + 1}, column ${colIndex + 1}`}
+                            >
+                                {sprite ? (
+                                    <img
+                                        src={sprite.previewUrl}
+                                        alt={`Sprite ${rowIndex}-${colIndex}`}
+                                        className="w-full h-full object-contain"
+                                        style={{ imageRendering: 'pixelated' }}
+                                    />
+                                ) : (
+                                    <div className="w-full h-full bg-black/20 rounded-sm" />
+                                )}
+                            </div>
+                        );
+                    })}
+                </React.Fragment>
+            ))}
         </div>
     );
 };

@@ -1,6 +1,6 @@
 
 import Dexie, { type Table } from 'dexie';
-import { Design } from '../types';
+import { Design, AnimationPose } from '../types';
 
 export class SpriteArtisanDB extends Dexie {
   // 'designs' is the name of our table.
@@ -23,6 +23,25 @@ export class SpriteArtisanDB extends Dexie {
         return tx.table('designs').toCollection().modify(design => {
             design.createdAt = design.createdAt || now;
             design.lastModified = design.lastModified || now;
+        });
+    });
+
+    // Version 3: Change selectedViewpoints to animationPoses for multi-pose support
+    (this as Dexie).version(3).stores({
+        designs: 'id, name, lastModified' // Schema definition doesn't change, only the object shape
+    }).upgrade(tx => {
+        return tx.table('designs').toCollection().modify(design => {
+            // Check if the old property exists and the new one doesn't
+            if (design.selectedViewpoints && !design.animationPoses) {
+                // Migrate the old data to the new structure
+                design.animationPoses = [{
+                    id: 'default-standing',
+                    name: 'Standing',
+                    viewpoints: design.selectedViewpoints
+                }];
+                // Remove the old, now-redundant property
+                delete design.selectedViewpoints;
+            }
         });
     });
   }

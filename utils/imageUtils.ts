@@ -1,3 +1,4 @@
+
 import { Sprite } from './types';
 
 export const fileToBase64 = (file: File): Promise<string> => {
@@ -67,6 +68,30 @@ export const removeMagentaBackground = (base64Image: string): Promise<string> =>
             }
 
             ctx.putImageData(imageData, 0, 0);
+            resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = (err) => reject(err);
+        img.src = base64Image;
+    });
+};
+
+export const flipImageHorizontally = (base64Image: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('Could not get canvas context'));
+
+            // Flip the canvas context horizontally
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            
+            // Draw the image onto the flipped context
+            ctx.drawImage(img, 0, 0);
+            
             resolve(canvas.toDataURL('image/png'));
         };
         img.onerror = (err) => reject(err);

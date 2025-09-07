@@ -1,19 +1,20 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Sprite, Design, BaseCharacter } from './types';
+import { Sprite, Design, BaseCharacter, AnimationPose } from './types';
 import { generateBaseCharacter, generateSprite, editSprite, generateDesignName } from './services/geminiService';
-import { fileToBase64, combineSprites, removeMagentaBackground } from './utils/imageUtils';
+import { fileToBase64, combineSprites, removeMagentaBackground, flipImageHorizontally } from './utils/imageUtils';
 import { getAllDesigns, saveDesign, deleteDesign, bulkSaveDesigns } from './services/db';
 
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
 import EditorPanel from './components/EditorPanel';
-import { LoadingIcon } from './components/icons';
+import { LoadingIcon, GenerateIcon, ExportIcon } from './components/icons';
 import ConceptionControls from './components/ConceptionControls';
 import CharacterPreview from './components/CharacterPreview';
 import LogConsole from './components/LogConsole';
 import PersistenceControls from './components/PersistenceControls';
+import ConfirmModal from './components/ConfirmModal';
 
 
 type WorkflowStage = 'conception' | 'spritesheet';
@@ -38,7 +39,7 @@ const App: React.FC = () => {
     const [initialImage, setInitialImage] = useState<File | null>(null);
     const [spriteGrid, setSpriteGrid] = useState<(Sprite | null)[][]>([]);
     const [spriteGridViewpoints, setSpriteGridViewpoints] = useState<string[]>([]);
-    const [selectedViewpoints, setSelectedViewpoints] = useState<string[]>(['front']);
+    const [animationPoses, setAnimationPoses] = useState<AnimationPose[]>([{ id: 'default-standing', name: 'Standing', viewpoints: ['front'] }]);
     const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
     const [animationType, setAnimationType] = useState<string>('walk');
     const [baseCharacter, setBaseCharacter] = useState<BaseCharacter | null>(null);
@@ -52,6 +53,14 @@ const App: React.FC = () => {
     const [previewZoom, setPreviewZoom] = useState<number>(4);
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
     const [logs, setLogs] = useState<Log[]>([]);
+    const [expandedPoseIds, setExpandedPoseIds] = useState<string[]>(['default-standing']);
+    const [isAnimationExpanded, setIsAnimationExpanded] = useState<boolean>(false);
+    const [confirmation, setConfirmation] = useState<{
+        isOpen: boolean;
+        message: string;
+        onConfirm: (() => void) | null;
+    }>({ isOpen: false, message: '', onConfirm: null });
+
 
     const previewContainerRef = useRef<HTMLDivElement>(null);
     const allViewpoints = ['front', 'back', 'left', 'right'];
@@ -103,6 +112,21 @@ const App: React.FC = () => {
         setLogs(prevLogs => [...prevLogs, newLog]);
     };
 
+    const showConfirmModal = (message: string, onConfirm: () => void) => {
+        setConfirmation({ isOpen: true, message, onConfirm });
+    };
+
+    const handleConfirm = () => {
+        if (confirmation.onConfirm) {
+            confirmation.onConfirm();
+        }
+        setConfirmation({ isOpen: false, message: '', onConfirm: null });
+    };
+
+    const handleCancelConfirm = () => {
+        setConfirmation({ isOpen: false, message: '', onConfirm: null });
+    };
+
     const resetToNewDesign = () => {
         setCurrentDesignId(null);
         setCurrentDesignCreatedAt(null);
@@ -114,7 +138,9 @@ const App: React.FC = () => {
         setSpriteGridViewpoints([]);
         setSpriteSize(32);
         setFrameCount(4);
-        setSelectedViewpoints(['front']);
+        setAnimationPoses([{ id: 'default-standing', name: 'Standing', viewpoints: ['front'], prompt: '' }]);
+        setExpandedPoseIds(['default-standing']);
+        setIsAnimationExpanded(false);
         setGenerateAnimation(false);
         setAnimationType('walk');
         setWorkflowStage('conception');
@@ -141,7 +167,7 @@ const App: React.FC = () => {
             frameCount,
             animationType,
             generateAnimation,
-            selectedViewpoints,
+            animationPoses,
             baseCharacter,
             spriteGrid,
             createdAt: currentDesignCreatedAt || now,
@@ -175,10 +201,12 @@ const App: React.FC = () => {
             setFrameCount(designToLoad.frameCount);
             setAnimationType(designToLoad.animationType);
             setGenerateAnimation(designToLoad.generateAnimation);
-            setSelectedViewpoints(designToLoad.selectedViewpoints);
+            setAnimationPoses(designToLoad.animationPoses);
             setBaseCharacter(designToLoad.baseCharacter);
             setSpriteGrid(designToLoad.spriteGrid);
-            setSpriteGridViewpoints(designToLoad.selectedViewpoints);
+            setSpriteGridViewpoints(allViewpoints);
+            setExpandedPoseIds(['default-standing']);
+            setIsAnimationExpanded(designToLoad.generateAnimation);
             
             setWorkflowStage(designToLoad.baseCharacter ? 'spritesheet' : 'conception');
             setSelectedSprite(null);
@@ -187,7 +215,7 @@ const App: React.FC = () => {
     };
     
     const handleDeleteDesign = async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this design? This cannot be undone.")) {
+        const deleteAction = async () => {
             try {
                 await deleteDesign(id);
                 const updatedDesigns = savedDesigns.filter(d => d.id !== id);
@@ -200,7 +228,12 @@ const App: React.FC = () => {
                  console.error("Failed to delete design from IndexedDB:", e);
                  setError("Could not delete the design from the database.");
             }
-        }
+        };
+
+        showConfirmModal(
+            "Are you sure you want to permanently delete this design? This action cannot be undone.",
+            deleteAction
+        );
     };
 
     const handleExportDesign = (id: string) => {
@@ -240,7 +273,7 @@ const App: React.FC = () => {
 
             const backupData = {
                 source: "pixel-art-spritesheet-creator-backup",
-                version: 2, // Corresponds to DB version
+                version: 3, // Corresponds to DB version
                 designs: allDesigns,
             };
 
@@ -269,6 +302,40 @@ const App: React.FC = () => {
             return;
         }
         
+        const migrateDesign = (d: any): Design => {
+            const now = Date.now();
+            const migrated: Design = {
+                ...d,
+                createdAt: d.createdAt || now,
+                lastModified: d.lastModified || now,
+            };
+
+            // V2 -> V3 migration
+            if ((d as any).selectedViewpoints && !migrated.animationPoses) {
+                migrated.animationPoses = [{ 
+                    id: 'default-standing', 
+                    name: 'Standing', 
+                    viewpoints: (d as any).selectedViewpoints 
+                }];
+                delete (migrated as any).selectedViewpoints;
+            }
+
+            if (!migrated.animationPoses) {
+                migrated.animationPoses = [{ id: 'default-standing', name: 'Standing', viewpoints: ['front'] }];
+            }
+
+            // Ensure all poses have the correct shape (for V4 prompt field, though optional)
+            migrated.animationPoses = migrated.animationPoses.map((p: any) => ({
+                id: p.id || Math.random().toString(36).substring(7),
+                name: p.name || 'Pose',
+                viewpoints: p.viewpoints || [],
+                prompt: p.prompt, // Will be undefined if not present, which is fine
+            }));
+
+
+            return migrated;
+        }
+
         try {
             const jsonString = await file.text();
             const importedObject = JSON.parse(jsonString);
@@ -277,23 +344,16 @@ const App: React.FC = () => {
 
             // Case 1: It's a full backup file
             if (importedObject.source === "pixel-art-spritesheet-creator-backup" && Array.isArray(importedObject.designs)) {
-                designsToImport = importedObject.designs;
-                 // Ensure imported designs have necessary fields from latest schema
-                designsToImport.forEach(d => {
-                    d.createdAt = d.createdAt || Date.now();
-                    d.lastModified = d.lastModified || Date.now();
-                });
+                designsToImport = importedObject.designs.map(migrateDesign);
             } 
             // Case 2: It's a single design file
-            else if (typeof importedObject.name === 'string' && Array.isArray(importedObject.spriteGrid)) {
+            else if (typeof importedObject.name === 'string' && (Array.isArray(importedObject.spriteGrid) || importedObject.baseCharacter)) {
                 const now = Date.now();
-                const newDesign: Design = { 
+                const singleDesign = { 
                     ...importedObject, 
-                    id: importedObject.id || now.toString(), // Keep original ID or create new
-                    createdAt: importedObject.createdAt || now,
-                    lastModified: now,
+                    id: importedObject.id || now.toString(),
                 };
-                designsToImport.push(newDesign);
+                designsToImport.push(migrateDesign(singleDesign));
             } else {
                 throw new Error("The imported file has an invalid format.");
             }
@@ -311,7 +371,7 @@ const App: React.FC = () => {
 
         } catch (err) {
             console.error(err);
-            setError(`Failed to import design: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            setError(`Failed to import design(s): ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
     };
 
@@ -375,55 +435,139 @@ const App: React.FC = () => {
         setWorkflowStage('conception');
     };
 
+    const handleRemovePose = (idToRemove: string) => {
+        const removeAction = () => {
+            const poseIndex = animationPoses.findIndex(p => p.id === idToRemove);
+            if (poseIndex === -1) return;
+
+            // Remove the pose from the list
+            const newAnimationPoses = animationPoses.filter(p => p.id !== idToRemove);
+            setAnimationPoses(newAnimationPoses);
+            setExpandedPoseIds(prev => prev.filter(id => id !== idToRemove));
+
+            // Remove corresponding rows from the sprite grid if it exists
+            if (spriteGrid.length > 0) {
+                const framesPerPose = generateAnimation ? frameCount : 1;
+                const startRowIndex = poseIndex * framesPerPose;
+                
+                const updatedSpriteGrid = [
+                    ...spriteGrid.slice(0, startRowIndex),
+                    ...spriteGrid.slice(startRowIndex + framesPerPose)
+                ];
+                setSpriteGrid(updatedSpriteGrid);
+            }
+        };
+
+        showConfirmModal(
+            "Are you sure you want to remove this pose? This action cannot be undone.",
+            removeAction
+        );
+    };
+
     const handleGenerateSpritesheet = async () => {
         if (!baseCharacter) {
             setError('No base character found.');
             return;
         }
-        if (selectedViewpoints.length === 0) {
-            setError('Please select at least one viewpoint to generate.');
+        if (animationPoses.length === 0 || animationPoses.every(p => p.viewpoints.length === 0)) {
+            setError('Please select at least one viewpoint in a pose to generate.');
             return;
         }
-
+    
         setIsLoading(true);
         setError(null);
         
-        const viewpointsToGenerate = allViewpoints.filter(vp => selectedViewpoints.includes(vp));
-        setSpriteGrid([]);
-        setSpriteGridViewpoints(viewpointsToGenerate);
+        const fixedViewpoints = allViewpoints;
+        
+        setSpriteGridViewpoints(fixedViewpoints);
         setSelectedSprite(null);
         
-        const numRows = generateAnimation ? frameCount : 1;
-        const numCols = viewpointsToGenerate.length;
+        const numPoses = animationPoses.length;
+        const framesPerPose = generateAnimation ? frameCount : 1;
+        const numRows = numPoses * framesPerPose;
+        const numCols = fixedViewpoints.length;
+    
+        // Preserve existing sprites while resizing the grid for the new generation settings.
+        // This prevents sprites from being cleared if they are not part of the current generation batch.
+        const oldGrid = spriteGrid;
+        const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map((_, r) =>
+            Array(numCols).fill(null).map((__, c) =>
+                (oldGrid[r] && oldGrid[r][c] !== undefined) ? oldGrid[r][c] : null
+            )
+        );
+        setSpriteGrid(newGrid);
 
-        const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map(() => Array(numCols).fill(null));
         const contextImages: { mimeType: string; data: string }[] = [{ mimeType: 'image/png', data: baseCharacter.imageUrl.split(',')[1] }];
-
+    
         try {
-            for (let row = 0; row < numRows; row++) {
-                for (let col = 0; col < numCols; col++) {
-                    const viewpoint = viewpointsToGenerate[col];
-                    const animationState = !generateAnimation || row === 0 ? 'standing still' : `in a ${animationType} animation (frame ${row + 1} of ${frameCount})`;
-                    
-                    const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite. The character is ${baseCharacter.prompt}. The character is facing ${viewpoint} and is ${animationState}. Maintain a consistent character design based on the provided context images.`;
-                    
-                    setLoadingMessage(`Generating... Frame ${row + 1}/${numRows}, View: ${viewpoint}`);
-                    
-                    const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize, addLog);
-                    const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
-                    const previewUrl = await removeMagentaBackground(imageUrl);
-                    
-                    const newSprite: Sprite = {
-                        id: `${row}-${col}`,
-                        imageUrl: imageUrl,
-                        previewUrl: previewUrl,
-                        prompt: prompt
-                    };
+            let currentRowIndex = 0;
+            for (let poseIndex = 0; poseIndex < numPoses; poseIndex++) {
+                const pose = animationPoses[poseIndex];
+                for (let frameIndex = 0; frameIndex < framesPerPose; frameIndex++) {
+                    for (let colIndex = 0; colIndex < numCols; colIndex++) {
+                        const viewpoint = fixedViewpoints[colIndex];
+                        
+                        if (!pose.viewpoints.includes(viewpoint)) {
+                            continue; // Skip generation if viewpoint is not selected for this pose
+                        }
+                        
+                        // INTELLIGENT FLIP: If generating 'right' view, flip the 'left' view instead of asking the AI.
+                        // This overcomes model bias and ensures perfect symmetry.
+                        if (viewpoint === 'right' && pose.viewpoints.includes('left')) {
+                            const leftColIndex = fixedViewpoints.indexOf('left');
+                            const leftSprite = newGrid[currentRowIndex][leftColIndex];
 
-                    newGrid[row][col] = newSprite;
-                    setSpriteGrid([...newGrid.map(r => [...r])]);
+                            if (leftSprite) {
+                                setLoadingMessage(`Pose: ${pose.name}, View: right (flipping)`);
+                                
+                                const [flippedImageUrl, flippedPreviewUrl] = await Promise.all([
+                                    flipImageHorizontally(leftSprite.imageUrl),
+                                    flipImageHorizontally(leftSprite.previewUrl),
+                                ]);
 
-                    contextImages.push({ mimeType: 'image/png', data: newSpriteBase64 });
+                                const rightSprite: Sprite = {
+                                    id: `${currentRowIndex}-${colIndex}`,
+                                    imageUrl: flippedImageUrl,
+                                    previewUrl: flippedPreviewUrl,
+                                    prompt: leftSprite.prompt.replace(/facing left/g, 'facing right'),
+                                };
+                                newGrid[currentRowIndex][colIndex] = rightSprite;
+                                setSpriteGrid([...newGrid.map(r => [...r])]);
+                                continue; // Skip to the next viewpoint
+                            }
+                            // If left sprite doesn't exist for some reason, we'll fall through and let the AI try to generate it.
+                        }
+
+                        // Use the detailed prompt if available, otherwise fall back to the pose name.
+                        const poseDescription = pose.prompt && pose.prompt.trim() !== '' ? pose.prompt : pose.name;
+
+                        const animationState = generateAnimation 
+                            ? `performing a "${poseDescription}" animation (frame ${frameIndex + 1} of ${frameCount})` 
+                            : `in a static "${poseDescription}" pose`;
+                        
+                        const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite. The character is ${baseCharacter.prompt}. The character is ${animationState}, facing ${viewpoint}. Maintain a consistent character design based on the provided context images.`;
+                        
+                        setLoadingMessage(`Pose: ${pose.name} (${poseIndex + 1}/${numPoses}), Frame: ${frameIndex + 1}/${framesPerPose}, View: ${viewpoint}`);
+                        
+                        const newSpriteBase64 = await generateSprite(prompt, contextImages, spriteSize, addLog);
+                        const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
+                        const previewUrl = await removeMagentaBackground(imageUrl);
+                        
+                        const newSprite: Sprite = {
+                            id: `${currentRowIndex}-${colIndex}`,
+                            imageUrl: imageUrl,
+                            previewUrl: previewUrl,
+                            prompt: prompt
+                        };
+    
+                        newGrid[currentRowIndex][colIndex] = newSprite;
+                        setSpriteGrid([...newGrid.map(r => [...r])]);
+    
+                        if (contextImages.length < 10) {
+                            contextImages.push({ mimeType: 'image/png', data: newSpriteBase64 });
+                        }
+                    }
+                    currentRowIndex++;
                 }
             }
         } catch (err) {
@@ -442,29 +586,66 @@ const App: React.FC = () => {
 
     const handleEdit = async (editPrompt: string) => {
         if (!selectedSprite || !editPrompt) return;
-        
+    
         const { row, col } = selectedSprite;
         const targetSprite = spriteGrid[row][col];
         if (!targetSprite) return;
-
+    
         setIsLoading(true);
         setError(null);
         setLoadingMessage(`Editing sprite...`);
-
-        const contextSprites = spriteGrid.flat().filter(sprite => sprite && sprite.id !== targetSprite.id).slice(0, 5) as Sprite[];
+    
+        const currentViewpoint = spriteGridViewpoints[col];
+        const leftColIndex = spriteGridViewpoints.indexOf('left');
+        const rightColIndex = spriteGridViewpoints.indexOf('right');
+        
+        let effectiveTargetSprite = targetSprite;
+        let effectiveEditCol = col;
+    
+        // If editing the right sprite, redirect the edit to the left sprite to maintain symmetry.
+        if (currentViewpoint === 'right' && leftColIndex !== -1) {
+            const leftSprite = spriteGrid[row][leftColIndex];
+            if (leftSprite) {
+                effectiveTargetSprite = leftSprite;
+                effectiveEditCol = leftColIndex;
+                setLoadingMessage(`Editing 'left' sprite to mirror changes...`);
+            }
+        }
+    
+        const contextSprites = spriteGrid.flat().filter(sprite => sprite && sprite.id !== effectiveTargetSprite.id).slice(0, 5) as Sprite[];
         
         try {
-            const editedSpriteBase64 = await editSprite(editPrompt, targetSprite, contextSprites, spriteSize, addLog);
+            const editedSpriteBase64 = await editSprite(editPrompt, effectiveTargetSprite, contextSprites, spriteSize, addLog);
             const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
             const previewUrl = await removeMagentaBackground(imageUrl);
-
+    
             const newGrid = [...spriteGrid.map(r => [...r])];
-            newGrid[row][col] = {
-                ...targetSprite,
+            
+            // Update the effectively edited sprite (which is always the left or another non-right sprite).
+            newGrid[row][effectiveEditCol] = {
+                ...effectiveTargetSprite,
                 imageUrl: imageUrl,
                 previewUrl: previewUrl,
             };
+    
+            // If the left sprite was edited (either directly or via the right), update the right sprite by flipping.
+            if (effectiveEditCol === leftColIndex && rightColIndex !== -1 && newGrid[row][rightColIndex]) {
+                setLoadingMessage('Flipping edited sprite...');
+                const [flippedImageUrl, flippedPreviewUrl] = await Promise.all([
+                    flipImageHorizontally(imageUrl),
+                    flipImageHorizontally(previewUrl),
+                ]);
+                
+                const originalRightSprite = newGrid[row][rightColIndex]!;
+                newGrid[row][rightColIndex] = {
+                    ...originalRightSprite,
+                    imageUrl: flippedImageUrl,
+                    previewUrl: flippedPreviewUrl,
+                };
+            }
+            
             setSpriteGrid(newGrid);
+    
         } catch (err) {
             console.error(err);
             setError(`Failed to edit sprite: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -487,8 +668,8 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="bg-[#282c34] min-h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
-            <header className="text-center border-b border-gray-600 pb-2">
+        <div className="bg-[#282c34] h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
+            <header className="text-center border-b border-gray-600 pb-2 flex-shrink-0">
                 <h1 className="text-2xl font-bold text-cyan-400">Pixel-art Spritesheet Creator</h1>
                 <p className="text-sm text-gray-400">Create game-ready sprite sheets with AI</p>
             </header>
@@ -499,25 +680,35 @@ const App: React.FC = () => {
                     <p className="mt-4 text-lg text-white">{loadingMessage}</p>
                 </div>
             )}
+            
+            {confirmation.isOpen && (
+                <ConfirmModal 
+                    message={confirmation.message}
+                    onConfirm={handleConfirm}
+                    onCancel={handleCancelConfirm}
+                />
+            )}
 
-            <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-1 flex flex-col gap-4 h-fit">
-                     <PersistenceControls
-                        designs={savedDesigns}
-                        currentDesignId={currentDesignId}
-                        designName={designName}
-                        setDesignName={setDesignName}
-                        onSave={handleSaveDesign}
-                        onLoad={handleLoadDesign}
-                        onDelete={handleDeleteDesign}
-                        onNew={handleNewDesign}
-                        onExport={handleExportDesign}
-                        onExportAll={handleExportAllDesigns}
-                        onImport={handleImportDesign}
-                        saveSuccess={saveSuccess}
-                    />
+            <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0">
+                <div className="md:col-span-1 flex flex-col gap-4 min-h-0">
+                    <div className="flex-shrink-0">
+                        <PersistenceControls
+                            designs={savedDesigns}
+                            currentDesignId={currentDesignId}
+                            designName={designName}
+                            setDesignName={setDesignName}
+                            onSave={handleSaveDesign}
+                            onLoad={handleLoadDesign}
+                            onDelete={handleDeleteDesign}
+                            onNew={handleNewDesign}
+                            onExport={handleExportDesign}
+                            onExportAll={handleExportAllDesigns}
+                            onImport={handleImportDesign}
+                            saveSuccess={saveSuccess}
+                        />
+                    </div>
 
-                    <div className="bg-[#3a3f4a] p-4 rounded-md border border-gray-600">
+                    <div className="flex-grow bg-[#3a3f4a] p-4 rounded-md border border-gray-600 overflow-y-auto">
                         {workflowStage === 'conception' ? (
                             <ConceptionControls
                                 prompt={initialPrompt}
@@ -537,12 +728,8 @@ const App: React.FC = () => {
                                     setSpriteSize={setSpriteSize}
                                     frameCount={frameCount}
                                     setFrameCount={setFrameCount}
-                                    onGenerate={handleGenerateSpritesheet}
-                                    isGenerating={isLoading}
-                                    hasContent={spriteGrid.length > 0}
-                                    onExport={handleExport}
-                                    selectedViewpoints={selectedViewpoints}
-                                    setSelectedViewpoints={setSelectedViewpoints}
+                                    animationPoses={animationPoses}
+                                    setAnimationPoses={setAnimationPoses}
                                     generateAnimation={generateAnimation}
                                     setGenerateAnimation={setGenerateAnimation}
                                     animationType={animationType}
@@ -551,6 +738,11 @@ const App: React.FC = () => {
                                     baseCharacterPreview={baseCharacter?.previewUrl || ''}
                                     previewZoom={previewZoom}
                                     setPreviewZoom={setPreviewZoom}
+                                    onRemovePose={handleRemovePose}
+                                    expandedPoseIds={expandedPoseIds}
+                                    setExpandedPoseIds={setExpandedPoseIds}
+                                    isAnimationExpanded={isAnimationExpanded}
+                                    setIsAnimationExpanded={setIsAnimationExpanded}
                                 />
                                 {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
                                     <EditorPanel
@@ -564,12 +756,35 @@ const App: React.FC = () => {
                         )}
                         {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
                     </div>
+                    {workflowStage === 'spritesheet' && (
+                         <div className="flex-shrink-0 flex flex-col gap-2 p-4 bg-[#3a3f4a] rounded-md border border-gray-600">
+                            <button
+                                onClick={handleGenerateSpritesheet}
+                                disabled={isLoading}
+                                className="w-full flex items-center justify-center gap-2 bg-cyan-600 text-white font-bold py-2 px-4 rounded-md hover:bg-cyan-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <GenerateIcon />
+                                {isLoading ? 'Generating...' : 'Generate Sprite Sheet'}
+                            </button>
+                            
+                            {spriteGrid.length > 0 && (
+                                <button
+                                    onClick={handleExport}
+                                    disabled={isLoading}
+                                    className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ExportIcon />
+                                    Export as PNG
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
 
 
-                <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4">
+                <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4 min-h-0">
                    {workflowStage === 'spritesheet' && (
-                     <div className="w-full max-w-sm flex items-center gap-4 px-4">
+                     <div className="w-full max-w-sm flex items-center gap-4 px-4 flex-shrink-0">
                         <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
                         <input
                             id="zoom-slider"
@@ -596,7 +811,9 @@ const App: React.FC = () => {
                                 selectedSprite={selectedSprite}
                                 zoomLevel={zoomLevel}
                                 viewpoints={spriteGridViewpoints}
-                                isAnimated={generateAnimation}
+                                animationPoses={animationPoses}
+                                generateAnimation={generateAnimation}
+                                frameCount={frameCount}
                             />
                          )}
                     </div>
