@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Design } from '../types';
-import { SaveIcon, PlusIcon, TrashIcon, FolderOpenIcon, CheckIcon } from './icons';
+import { SaveIcon, PlusIcon, TrashIcon, FolderOpenIcon, CheckIcon, UploadIcon, ExportIcon } from './icons';
 
 interface PersistenceControlsProps {
     designs: Design[];
@@ -11,14 +11,29 @@ interface PersistenceControlsProps {
     onLoad: (id: string) => void;
     onDelete: (id: string) => void;
     onNew: () => void;
+    onExport: (id: string) => void;
+    onImport: (file: File) => void;
     saveSuccess: boolean;
 }
 
 const PersistenceControls: React.FC<PersistenceControlsProps> = ({
     designs, currentDesignId, designName, setDesignName,
-    onSave, onLoad, onDelete, onNew, saveSuccess
+    onSave, onLoad, onDelete, onNew, onExport, onImport, saveSuccess
 }) => {
     const [isListOpen, setIsListOpen] = useState(false);
+    const importInputRef = useRef<HTMLInputElement>(null);
+
+    const handleImportClick = () => {
+        importInputRef.current?.click();
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            onImport(e.target.files[0]);
+            // Reset the input value to allow importing the same file again
+            e.target.value = '';
+        }
+    };
 
     return (
         <div className="bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col gap-3">
@@ -46,6 +61,21 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                 >
                     {saveSuccess ? <CheckIcon /> : <SaveIcon />}
                 </button>
+                 <button
+                    onClick={handleImportClick}
+                    title="Import Design"
+                    className="p-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+                    aria-label="Import Design"
+                >
+                    <UploadIcon />
+                </button>
+                 <input
+                    type="file"
+                    ref={importInputRef}
+                    className="hidden"
+                    accept=".json"
+                    onChange={handleFileChange}
+                />
                 <button
                     onClick={onNew}
                     title="New Design"
@@ -72,6 +102,9 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                                 <li key={d.id} className="flex justify-between items-center p-2 rounded-md hover:bg-gray-700">
                                     <span className="text-sm truncate" title={d.name}>{d.name}</span>
                                     <div className="flex gap-2 items-center flex-shrink-0">
+                                        <button onClick={() => onExport(d.id)} title="Export" className="text-gray-300 hover:text-green-400" aria-label={`Export ${d.name}`}>
+                                            <ExportIcon />
+                                        </button>
                                         <button onClick={() => onLoad(d.id)} title="Load" className="text-gray-300 hover:text-cyan-400" aria-label={`Load ${d.name}`}>
                                             <FolderOpenIcon />
                                         </button>

@@ -161,6 +161,64 @@ const App: React.FC = () => {
         }
     };
 
+    const handleExportDesign = (id: string) => {
+        setError(null);
+        const designToExport = savedDesigns.find(d => d.id === id);
+        if (!designToExport) {
+            setError("Could not find the design to export.");
+            return;
+        }
+
+        try {
+            const designJson = JSON.stringify(designToExport, null, 2);
+            const blob = new Blob([designJson], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            const safeFilename = designToExport.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            link.download = `sprite-artisan-${safeFilename || 'design'}.json`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        } catch (err) {
+            console.error(err);
+            setError(`Failed to export design: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+    };
+
+    const handleImportDesign = async (file: File) => {
+        setError(null);
+        if (!file.name.endsWith('.json')) {
+            setError("Invalid file type. Please upload a .json file.");
+            return;
+        }
+        
+        try {
+            const jsonString = await file.text();
+            const importedObject = JSON.parse(jsonString);
+
+            // Basic validation
+            if (!importedObject || typeof importedObject.name !== 'string' || !Array.isArray(importedObject.spriteGrid)) {
+                throw new Error("The imported file has an invalid format.");
+            }
+            
+            // Assign a new unique ID to prevent conflicts
+            const newDesign: Design = { ...importedObject, id: Date.now().toString() };
+
+            await saveDesign(newDesign);
+            const updatedDesigns = await getAllDesigns();
+            setSavedDesigns(updatedDesigns);
+            
+            // Automatically load the newly imported design
+            handleLoadDesign(newDesign.id);
+
+        } catch (err) {
+            console.error(err);
+            setError(`Failed to import design: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+    };
+
 
     const handleGenerateBaseCharacter = async () => {
         if (!initialPrompt && !initialImage) {
@@ -354,6 +412,8 @@ const App: React.FC = () => {
                         onLoad={handleLoadDesign}
                         onDelete={handleDeleteDesign}
                         onNew={handleNewDesign}
+                        onExport={handleExportDesign}
+                        onImport={handleImportDesign}
                         saveSuccess={saveSuccess}
                     />
 
