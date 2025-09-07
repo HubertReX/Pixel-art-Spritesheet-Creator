@@ -2,9 +2,11 @@ import React from 'react';
 
 interface CharacterPreviewProps {
     imageUrl: string | null;
+    spriteSize: number;
+    zoomLevel: number;
 }
 
-const CharacterPreview: React.FC<CharacterPreviewProps> = ({ imageUrl }) => {
+const CharacterPreview: React.FC<CharacterPreviewProps> = ({ imageUrl, spriteSize, zoomLevel }) => {
     if (!imageUrl) {
         return (
             <div className="flex items-center justify-center w-full h-full text-gray-400">
@@ -12,12 +14,14 @@ const CharacterPreview: React.FC<CharacterPreviewProps> = ({ imageUrl }) => {
             </div>
         );
     }
+
+    const displaySize = spriteSize * zoomLevel;
     
     return (
         <div className="flex items-center justify-center">
              <div 
                 className="border-2 border-cyan-400 rounded-md p-1"
-                style={{ width: `256px`, height: `256px` }}
+                style={{ width: `${displaySize}px`, height: `${displaySize}px` }}
             >
                 <img
                     src={imageUrl}

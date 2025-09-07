@@ -135,6 +135,7 @@ const App: React.FC = () => {
     const [selectedSprite, setSelectedSprite] = useState<{ row: number; col: number } | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [zoomLevel, setZoomLevel] = useState<number>(16);
+    const [conceptionZoom, setConceptionZoom] = useState<number>(8);
     const [previewZoom, setPreviewZoom] = useState<number>(4);
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
     const [logs, setLogs] = useState<Log[]>([]);
@@ -1218,6 +1219,24 @@ const App: React.FC = () => {
                                 )}
                             </div>
                         )}
+                        {workflowStage === 'conception' && (
+                            <div className="w-full max-w-lg flex flex-col items-center gap-4 px-4">
+                                <div className="w-full flex items-center gap-4">
+                                    <label htmlFor="conception-zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
+                                    <input
+                                        id="conception-zoom-slider"
+                                        type="range"
+                                        min="1"
+                                        max="16"
+                                        step="1"
+                                        value={conceptionZoom}
+                                        onChange={(e) => setConceptionZoom(Number(e.target.value))}
+                                        className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-300 w-10 text-center">{conceptionZoom}x</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div 
@@ -1230,7 +1249,11 @@ const App: React.FC = () => {
                         style={getPreviewStyle()}
                     >
                          {workflowStage === 'conception' ? (
-                            <CharacterPreview imageUrl={baseCharacter?.previewUrl || null} />
+                            <CharacterPreview
+                                imageUrl={baseCharacter?.previewUrl || null}
+                                spriteSize={spriteSize}
+                                zoomLevel={conceptionZoom}
+                            />
                          ) : (
                             <SpriteGrid
                                 grid={spriteGrid}
