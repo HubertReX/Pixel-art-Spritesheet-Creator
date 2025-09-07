@@ -36,6 +36,22 @@ export const generateDesignName = async (prompt: string): Promise<string> => {
     return response.text.trim().replace(/"/g, '');
 };
 
+export const generateBackground = async (prompt: string): Promise<string> => {
+    const response = await ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt: `A seamless, tileable game background for a top-down pixel art game. The theme is: "${prompt}".`,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/png',
+          aspectRatio: '1:1',
+        },
+    });
+
+    const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+    return `data:image/png;base64,${base64ImageBytes}`;
+};
+
+
 export const generateBaseCharacter = async (
     prompt: string,
     contextImage: { mimeType: string; data: string } | null,

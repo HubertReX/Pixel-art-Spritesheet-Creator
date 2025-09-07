@@ -1,5 +1,5 @@
 import React from 'react';
-import { UploadIcon, GenerateIcon } from './icons';
+import { UploadIcon, GenerateIcon, ExportIcon } from './icons';
 
 interface ConceptionControlsProps {
     prompt: string;
@@ -8,6 +8,7 @@ interface ConceptionControlsProps {
     onGenerate: () => void;
     isGenerating: boolean;
     hasBaseCharacter: boolean;
+    baseCharacterPreview: string | null;
     onProceed: () => void;
     spriteSize: number;
     setSpriteSize: (size: number) => void;
@@ -15,7 +16,7 @@ interface ConceptionControlsProps {
 
 const ConceptionControls: React.FC<ConceptionControlsProps> = ({
     prompt, setPrompt, setInitialImage, onGenerate, isGenerating,
-    hasBaseCharacter, onProceed, spriteSize, setSpriteSize
+    hasBaseCharacter, baseCharacterPreview, onProceed, spriteSize, setSpriteSize
 }) => {
     
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,6 +32,16 @@ const ConceptionControls: React.FC<ConceptionControlsProps> = ({
                 onGenerate();
             }
         }
+    };
+
+    const handleDownloadBaseCharacter = () => {
+        if (!baseCharacterPreview) return;
+        const link = document.createElement('a');
+        link.href = baseCharacterPreview;
+        link.download = 'base_character.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const suggestions = [
@@ -104,13 +115,23 @@ const ConceptionControls: React.FC<ConceptionControlsProps> = ({
             </button>
             
             {hasBaseCharacter && (
-                 <button
-                    onClick={onProceed}
-                    disabled={isGenerating}
-                    className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
-                >
-                    Next: Create Sprite Sheet &rarr;
-                </button>
+                <>
+                    <button
+                        onClick={handleDownloadBaseCharacter}
+                        disabled={isGenerating}
+                        className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <ExportIcon />
+                        Download Character
+                    </button>
+                    <button
+                        onClick={onProceed}
+                        disabled={isGenerating}
+                        className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                    >
+                        Next: Create Sprite Sheet &rarr;
+                    </button>
+                </>
             )}
         </div>
     );

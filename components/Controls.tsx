@@ -115,6 +115,7 @@ const Controls: React.FC<ControlsProps> = ({
                         style={{
                             width: `${spriteSize * previewZoom}px`,
                             height: `${spriteSize * previewZoom}px`,
+                            objectFit: 'contain',
                             imageRendering: 'pixelated'
                         }}
                     />

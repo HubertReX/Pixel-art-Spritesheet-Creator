@@ -59,7 +59,7 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({
 
             {/* Column Headers */}
             {viewpoints.map((vp, colIndex) => (
-                <div key={`col-header-${colIndex}`} className="text-center text-gray-400 text-sm font-semibold capitalize">
+                <div key={`col-header-${colIndex}`} className="text-center text-gray-200 text-lg font-semibold capitalize [text-shadow:0_1px_3px_rgba(0,0,0,0.7)]">
                     {vp}
                 </div>
             ))}
@@ -67,7 +67,7 @@ const SpriteGrid: React.FC<SpriteGridProps> = ({
             {/* Rows with headers and sprites */}
             {grid.map((row, rowIndex) => (
                 <React.Fragment key={`row-fragment-${rowIndex}`}>
-                    <div className="text-right text-gray-400 text-sm font-semibold pr-2 whitespace-nowrap">
+                    <div className="text-right text-gray-200 text-lg font-semibold pr-2 whitespace-nowrap [text-shadow:0_1px_3px_rgba(0,0,0,0.7)]">
                        {getRowHeader(rowIndex)}
                     </div>
                     {Array.from({ length: cols }).map((_, colIndex) => {

@@ -1,5 +1,7 @@
 
 
+export type PreviewBackgroundType = 'transparent' | 'white' | 'black' | 'custom';
+
 export interface Sprite {
   id: string;
   imageUrl: string; // base64 data URL with magenta BG
@@ -39,4 +41,6 @@ export interface Design {
     spriteGrid: (Sprite | null)[][];
     createdAt: number;
     lastModified: number;
+    previewBackgroundType?: PreviewBackgroundType;
+    customBackground?: string; // base64 data URL
 }

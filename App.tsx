@@ -1,8 +1,8 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Sprite, Design, BaseCharacter, AnimationPose, Log } from './types';
-import { generateBaseCharacter, generateSprite, editSprite, generateDesignName } from './services/geminiService';
+import { Sprite, Design, BaseCharacter, AnimationPose, Log, PreviewBackgroundType } from './types';
+import { generateBaseCharacter, generateSprite, editSprite, generateDesignName, generateBackground } from './services/geminiService';
 import { fileToBase64, combineSprites, removeMagentaBackground, flipImageHorizontally } from './utils/imageUtils';
 import { getAllDesigns, saveDesign, deleteDesign, bulkSaveDesigns } from './services/db';
 
@@ -15,6 +15,8 @@ import CharacterPreview from './components/CharacterPreview';
 import LogConsole from './components/LogConsole';
 import PersistenceControls from './components/PersistenceControls';
 import ConfirmModal from './components/ConfirmModal';
+import BackgroundControls from './components/BackgroundControls';
+import { defaultCustomBackground } from './defaultBackground';
 
 
 type WorkflowStage = 'conception' | 'spritesheet';
@@ -55,6 +57,8 @@ const App: React.FC = () => {
         message: string;
         onConfirm: (() => void) | null;
     }>({ isOpen: false, message: '', onConfirm: null });
+    const [previewBackgroundType, setPreviewBackgroundType] = useState<PreviewBackgroundType>('transparent');
+    const [customBackground, setCustomBackground] = useState<string | null>(defaultCustomBackground);
 
 
     const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -140,6 +144,8 @@ const App: React.FC = () => {
         setAnimationType('walk');
         setWorkflowStage('conception');
         setSelectedSprite(null);
+        setPreviewBackgroundType('transparent');
+        setCustomBackground(defaultCustomBackground);
         setError(null);
     };
 
@@ -167,6 +173,8 @@ const App: React.FC = () => {
             spriteGrid,
             createdAt: currentDesignCreatedAt || now,
             lastModified: now,
+            previewBackgroundType,
+            customBackground: customBackground ?? undefined,
         };
 
         try {
@@ -185,8 +193,9 @@ const App: React.FC = () => {
         }
     };
     
-    const handleLoadDesign = (id: string) => {
-        const designToLoad = savedDesigns.find(d => d.id === id);
+    const handleLoadDesign = (id: string, designsList?: Design[]) => {
+        const designs = designsList || savedDesigns;
+        const designToLoad = designs.find(d => d.id === id);
         if (designToLoad) {
             setCurrentDesignId(designToLoad.id);
             setCurrentDesignCreatedAt(designToLoad.createdAt);
@@ -202,6 +211,8 @@ const App: React.FC = () => {
             setSpriteGridViewpoints(allViewpoints);
             setExpandedPoseIds(['default-standing']);
             setIsAnimationExpanded(designToLoad.generateAnimation);
+            setPreviewBackgroundType(designToLoad.previewBackgroundType || 'transparent');
+            setCustomBackground(designToLoad.customBackground || defaultCustomBackground);
             
             setWorkflowStage(designToLoad.baseCharacter ? 'spritesheet' : 'conception');
             setSelectedSprite(null);
@@ -303,6 +314,8 @@ const App: React.FC = () => {
                 ...d,
                 createdAt: d.createdAt || now,
                 lastModified: d.lastModified || now,
+                previewBackgroundType: d.previewBackgroundType || 'transparent',
+                customBackground: d.customBackground ?? undefined,
             };
 
             // V2 -> V3 migration
@@ -360,7 +373,7 @@ const App: React.FC = () => {
                 
                 // If it was a single import, automatically load it
                 if (designsToImport.length === 1) {
-                    handleLoadDesign(designsToImport[0].id);
+                    handleLoadDesign(designsToImport[0].id, updatedDesigns);
                 }
             }
 
@@ -409,6 +422,10 @@ const App: React.FC = () => {
             const newBaseChar = { imageUrl, previewUrl, prompt: initialPrompt };
             setBaseCharacter(newBaseChar);
 
+            // When the base character is updated, the existing spritesheet is no longer valid.
+            setSpriteGrid([]);
+            setSpriteGridViewpoints([]);
+
             // If it's a new design, generate a name and set up the design ID
             if (!currentDesignId) {
                 setLoadingMessage('Generating design name...');
@@ -435,8 +452,6 @@ const App: React.FC = () => {
         if (baseCharacter) {
             setWorkflowStage('spritesheet');
             setError(null);
-            setSpriteGrid([]);
-            setSpriteGridViewpoints([]);
             setSelectedSprite(null);
         }
     };
@@ -720,6 +735,46 @@ const App: React.FC = () => {
         document.body.removeChild(link);
     };
 
+    const handleGenerateCustomBackground = async (prompt: string) => {
+        setIsLoading(true);
+        setError(null);
+        setLoadingMessage('Generating custom background...');
+        
+        try {
+            addLog('Generating Custom Background', { 'Prompt': `"${prompt}"` });
+            const newBackgroundUrl = await generateBackground(prompt);
+            setCustomBackground(newBackgroundUrl);
+            setPreviewBackgroundType('custom');
+        } catch (err) {
+            console.error(err);
+            setError(`Failed to generate background: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
+            setIsLoading(false);
+            setLoadingMessage('');
+        }
+    };
+
+    const getPreviewStyle = (): React.CSSProperties => {
+        switch(previewBackgroundType) {
+            case 'white':
+                return { backgroundColor: '#FFFFFF' };
+            case 'black':
+                return { backgroundColor: '#000000' };
+            case 'custom':
+                if (customBackground) {
+                    return { 
+                        backgroundImage: `url(${customBackground})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center' 
+                    };
+                }
+                return {};
+            case 'transparent':
+            default:
+                return {};
+        }
+    };
+
     return (
         <div className="bg-[#282c34] h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
             <header className="text-center border-b border-gray-600 pb-2 flex-shrink-0">
@@ -770,6 +825,7 @@ const App: React.FC = () => {
                                 onGenerate={handleGenerateBaseCharacter}
                                 isGenerating={isLoading}
                                 hasBaseCharacter={!!baseCharacter}
+                                baseCharacterPreview={baseCharacter?.previewUrl || null}
                                 onProceed={handleProceedToSpritesheet}
                                 spriteSize={spriteSize}
                                 setSpriteSize={setSpriteSize}
@@ -836,24 +892,41 @@ const App: React.FC = () => {
 
 
                 <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4 min-h-0">
-                   {workflowStage === 'spritesheet' && (
-                     <div className="w-full max-w-sm flex items-center gap-4 px-4 flex-shrink-0">
-                        <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
-                        <input
-                            id="zoom-slider"
-                            type="range"
-                            min="1"
-                            max="64"
-                            step="1"
-                            value={zoomLevel}
-                            onChange={(e) => setZoomLevel(Number(e.target.value))}
-                            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    <div className="w-full flex-shrink-0 flex flex-col items-center gap-4">
+                        <BackgroundControls 
+                            backgroundType={previewBackgroundType}
+                            onBackgroundTypeChange={setPreviewBackgroundType}
+                            onGenerateCustomBackground={handleGenerateCustomBackground}
+                            isGenerating={isLoading}
+                            customBackgroundUrl={customBackground}
                         />
-                        <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
+                        {workflowStage === 'spritesheet' && (
+                            <div className="w-full max-w-sm flex items-center gap-4 px-4">
+                                <label htmlFor="zoom-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Zoom</label>
+                                <input
+                                    id="zoom-slider"
+                                    type="range"
+                                    min="1"
+                                    max="64"
+                                    step="1"
+                                    value={zoomLevel}
+                                    onChange={(e) => setZoomLevel(Number(e.target.value))}
+                                    className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                />
+                                <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
+                            </div>
+                        )}
                     </div>
-                   )}
 
-                    <div ref={previewContainerRef} className="flex-grow w-full flex items-center justify-center checkerboard p-2 rounded-md overflow-auto">
+                    <div 
+                        ref={previewContainerRef} 
+                        className={`flex-grow w-full flex items-center justify-center p-2 rounded-md overflow-auto ${
+                            (previewBackgroundType === 'transparent' || (previewBackgroundType === 'custom' && !customBackground)) 
+                                ? 'checkerboard' 
+                                : ''
+                        }`}
+                        style={getPreviewStyle()}
+                    >
                          {workflowStage === 'conception' ? (
                             <CharacterPreview imageUrl={baseCharacter?.previewUrl || null} />
                          ) : (
