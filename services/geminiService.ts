@@ -27,11 +27,20 @@ const imageToBase64Part = (base64Data: string, mimeType: string = 'image/png') =
     };
 };
 
+export const generateDesignName = async (prompt: string): Promise<string> => {
+    const fullPrompt = `Generate a very short, cool, and memorable name (2-3 words max) for a game character based on the following description. Return only the name, with no extra text or quotes.\n\nDescription: "${prompt}"`;
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+    });
+    return response.text.trim().replace(/"/g, '');
+};
+
 export const generateBaseCharacter = async (
     prompt: string,
     contextImage: { mimeType: string; data: string } | null,
     spriteSize: number,
-    logPrompt?: (prompt: string) => void
+    logPrompt?: (prompt:string) => void
 ): Promise<string> => {
     const specialInstructions = `Perspective is top-down facing front. The character should fill the frame as much as possible. If the character has feet, they should touch the bottom border of the image. The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
     const fullPrompt = `${prompt}. ${specialInstructions} ${basePromptEnhancer}`;

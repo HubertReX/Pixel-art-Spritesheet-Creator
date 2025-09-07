@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Sprite } from './types';
-import { generateBaseCharacter, generateSprite, editSprite } from './services/geminiService';
+import React, { useState, useEffect } from 'react';
+import { Sprite, Design, BaseCharacter } from './types';
+import { generateBaseCharacter, generateSprite, editSprite, generateDesignName } from './services/geminiService';
 import { fileToBase64, combineSprites, removeMagentaBackground } from './utils/imageUtils';
+import { getAllDesigns, saveDesign, deleteDesign } from './services/db';
+
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
 import EditorPanel from './components/EditorPanel';
@@ -9,14 +11,10 @@ import { LoadingIcon } from './components/icons';
 import ConceptionControls from './components/ConceptionControls';
 import CharacterPreview from './components/CharacterPreview';
 import LogConsole from './components/LogConsole';
+import PersistenceControls from './components/PersistenceControls';
+
 
 type WorkflowStage = 'conception' | 'spritesheet';
-
-interface BaseCharacter {
-    imageUrl: string;
-    previewUrl: string;
-    prompt: string;
-}
 
 interface Log {
     timestamp: string;
@@ -24,32 +22,145 @@ interface Log {
 }
 
 const App: React.FC = () => {
+    // Design State
+    const [savedDesigns, setSavedDesigns] = useState<Design[]>([]);
+    const [currentDesignId, setCurrentDesignId] = useState<string | null>(null);
+    const [designName, setDesignName] = useState<string>('');
+    const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+    
+    // Character & Grid State
     const [spriteSize, setSpriteSize] = useState<number>(32);
     const [frameCount, setFrameCount] = useState<number>(4);
     const [initialPrompt, setInitialPrompt] = useState<string>('');
     const [initialImage, setInitialImage] = useState<File | null>(null);
     const [spriteGrid, setSpriteGrid] = useState<(Sprite | null)[][]>([]);
+    const [selectedViewpoints, setSelectedViewpoints] = useState<string[]>(['front']);
+    const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
+    const [animationType, setAnimationType] = useState<string>('walk');
+    const [baseCharacter, setBaseCharacter] = useState<BaseCharacter | null>(null);
+    
+    // UI State
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [selectedSprite, setSelectedSprite] = useState<{ row: number; col: number } | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [selectedViewpoints, setSelectedViewpoints] = useState<string[]>(['front']);
-    const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
-    const [animationType, setAnimationType] = useState<string>('walk');
     const [zoomLevel, setZoomLevel] = useState<number>(32);
     const [previewZoom, setPreviewZoom] = useState<number>(4);
-    
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
-    const [baseCharacter, setBaseCharacter] = useState<BaseCharacter | null>(null);
     const [logs, setLogs] = useState<Log[]>([]);
 
     const allViewpoints = ['front', 'back', 'left', 'right'];
+
+    // Load saved designs from IndexedDB on initial render
+    useEffect(() => {
+        const loadDesignsFromDB = async () => {
+            try {
+                const designs = await getAllDesigns();
+                setSavedDesigns(designs);
+            } catch (e) {
+                console.error("Failed to load designs from IndexedDB:", e);
+                setError("Could not load saved designs from the database.");
+            }
+        };
+        loadDesignsFromDB();
+    }, []);
 
     const addLog = (prompt: string) => {
         const timestamp = new Date().toLocaleTimeString();
         const newLog = { timestamp, message: `Sending prompt:\n${prompt}` };
         setLogs(prevLogs => [...prevLogs, newLog]);
     };
+
+    const resetToNewDesign = () => {
+        setCurrentDesignId(null);
+        setDesignName('');
+        setInitialPrompt('');
+        setInitialImage(null);
+        setBaseCharacter(null);
+        setSpriteGrid([]);
+        setSpriteSize(32);
+        setFrameCount(4);
+        setSelectedViewpoints(['front']);
+        setGenerateAnimation(false);
+        setAnimationType('walk');
+        setWorkflowStage('conception');
+        setSelectedSprite(null);
+        setError(null);
+    };
+
+    const handleNewDesign = () => {
+        resetToNewDesign();
+    };
+
+    const handleSaveDesign = async () => {
+        if (!currentDesignId || !designName) {
+            setError("A design must be created and have a name before it can be saved.");
+            return;
+        }
+
+        const designData: Design = {
+            id: currentDesignId,
+            name: designName,
+            prompt: initialPrompt,
+            spriteSize,
+            frameCount,
+            animationType,
+            generateAnimation,
+            selectedViewpoints,
+            baseCharacter,
+            spriteGrid,
+        };
+
+        try {
+            await saveDesign(designData);
+            const updatedDesigns = await getAllDesigns(); // Re-fetch to get sorted list
+            setSavedDesigns(updatedDesigns);
+            setError(null);
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 2000);
+        } catch (e) {
+            console.error("Failed to save to IndexedDB:", e);
+            setError("Could not save the design to the database. An error occurred.");
+        }
+    };
+    
+    const handleLoadDesign = (id: string) => {
+        const designToLoad = savedDesigns.find(d => d.id === id);
+        if (designToLoad) {
+            setCurrentDesignId(designToLoad.id);
+            setDesignName(designToLoad.name);
+            setInitialPrompt(designToLoad.prompt);
+            setSpriteSize(designToLoad.spriteSize);
+            setFrameCount(designToLoad.frameCount);
+            setAnimationType(designToLoad.animationType);
+            setGenerateAnimation(designToLoad.generateAnimation);
+            setSelectedViewpoints(designToLoad.selectedViewpoints);
+            setBaseCharacter(designToLoad.baseCharacter);
+            setSpriteGrid(designToLoad.spriteGrid);
+            
+            setWorkflowStage(designToLoad.baseCharacter ? 'spritesheet' : 'conception');
+            setSelectedSprite(null);
+            setError(null);
+        }
+    };
+    
+    const handleDeleteDesign = async (id: string) => {
+        if (window.confirm("Are you sure you want to delete this design? This cannot be undone.")) {
+            try {
+                await deleteDesign(id);
+                const updatedDesigns = savedDesigns.filter(d => d.id !== id);
+                setSavedDesigns(updatedDesigns);
+
+                if (currentDesignId === id) {
+                    resetToNewDesign();
+                }
+            } catch (e) {
+                 console.error("Failed to delete design from IndexedDB:", e);
+                 setError("Could not delete the design from the database.");
+            }
+        }
+    };
+
 
     const handleGenerateBaseCharacter = async () => {
         if (!initialPrompt && !initialImage) {
@@ -76,11 +187,17 @@ const App: React.FC = () => {
             const newSpriteBase64 = await generateBaseCharacter(initialPrompt, contextImage, spriteSize, addLog);
             const imageUrl = `data:image/png;base64,${newSpriteBase64}`;
             const previewUrl = await removeMagentaBackground(imageUrl);
-            setBaseCharacter({
-                imageUrl,
-                previewUrl,
-                prompt: initialPrompt
-            });
+            const newBaseChar = { imageUrl, previewUrl, prompt: initialPrompt };
+            setBaseCharacter(newBaseChar);
+
+            // If it's a new design, generate a name and set up the design ID
+            if (!currentDesignId) {
+                setLoadingMessage('Generating design name...');
+                const name = await generateDesignName(initialPrompt);
+                setDesignName(name);
+                setCurrentDesignId(Date.now().toString());
+            }
+
         } catch (err) {
             console.error(err);
             setError(`An error occurred during generation: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -227,53 +344,68 @@ const App: React.FC = () => {
             )}
 
             <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-1 bg-[#3a3f4a] p-4 rounded-md flex flex-col gap-4 border border-gray-600 h-fit">
-                    {workflowStage === 'conception' ? (
-                        <ConceptionControls
-                            prompt={initialPrompt}
-                            setPrompt={setInitialPrompt}
-                            setInitialImage={setInitialImage}
-                            onGenerate={handleGenerateBaseCharacter}
-                            isGenerating={isLoading}
-                            hasBaseCharacter={!!baseCharacter}
-                            onProceed={handleProceedToSpritesheet}
-                            spriteSize={spriteSize}
-                            setSpriteSize={setSpriteSize}
-                        />
-                    ) : (
-                        <>
-                            <Controls
+                <div className="md:col-span-1 flex flex-col gap-4 h-fit">
+                     <PersistenceControls
+                        designs={savedDesigns}
+                        currentDesignId={currentDesignId}
+                        designName={designName}
+                        setDesignName={setDesignName}
+                        onSave={handleSaveDesign}
+                        onLoad={handleLoadDesign}
+                        onDelete={handleDeleteDesign}
+                        onNew={handleNewDesign}
+                        saveSuccess={saveSuccess}
+                    />
+
+                    <div className="bg-[#3a3f4a] p-4 rounded-md border border-gray-600">
+                        {workflowStage === 'conception' ? (
+                            <ConceptionControls
+                                prompt={initialPrompt}
+                                setPrompt={setInitialPrompt}
+                                setInitialImage={setInitialImage}
+                                onGenerate={handleGenerateBaseCharacter}
+                                isGenerating={isLoading}
+                                hasBaseCharacter={!!baseCharacter}
+                                onProceed={handleProceedToSpritesheet}
                                 spriteSize={spriteSize}
                                 setSpriteSize={setSpriteSize}
-                                frameCount={frameCount}
-                                setFrameCount={setFrameCount}
-                                onGenerate={handleGenerateSpritesheet}
-                                isGenerating={isLoading}
-                                hasContent={spriteGrid.length > 0}
-                                onExport={handleExport}
-                                selectedViewpoints={selectedViewpoints}
-                                setSelectedViewpoints={setSelectedViewpoints}
-                                generateAnimation={generateAnimation}
-                                setGenerateAnimation={setGenerateAnimation}
-                                animationType={animationType}
-                                setAnimationType={setAnimationType}
-                                onBack={handleBackToConception}
-                                baseCharacterPreview={baseCharacter?.previewUrl || ''}
-                                previewZoom={previewZoom}
-                                setPreviewZoom={setPreviewZoom}
                             />
-                             {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
-                                <EditorPanel
-                                    sprite={spriteGrid[selectedSprite.row][selectedSprite.col]!}
-                                    onEdit={handleEdit}
-                                    onClose={() => setSelectedSprite(null)}
-                                    isEditing={isLoading}
+                        ) : (
+                            <>
+                                <Controls
+                                    spriteSize={spriteSize}
+                                    setSpriteSize={setSpriteSize}
+                                    frameCount={frameCount}
+                                    setFrameCount={setFrameCount}
+                                    onGenerate={handleGenerateSpritesheet}
+                                    isGenerating={isLoading}
+                                    hasContent={spriteGrid.length > 0}
+                                    onExport={handleExport}
+                                    selectedViewpoints={selectedViewpoints}
+                                    setSelectedViewpoints={setSelectedViewpoints}
+                                    generateAnimation={generateAnimation}
+                                    setGenerateAnimation={setGenerateAnimation}
+                                    animationType={animationType}
+                                    setAnimationType={setAnimationType}
+                                    onBack={handleBackToConception}
+                                    baseCharacterPreview={baseCharacter?.previewUrl || ''}
+                                    previewZoom={previewZoom}
+                                    setPreviewZoom={setPreviewZoom}
                                 />
-                            )}
-                        </>
-                    )}
-                     {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+                                {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
+                                    <EditorPanel
+                                        sprite={spriteGrid[selectedSprite.row][selectedSprite.col]!}
+                                        onEdit={handleEdit}
+                                        onClose={() => setSelectedSprite(null)}
+                                        isEditing={isLoading}
+                                    />
+                                )}
+                            </>
+                        )}
+                        {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+                    </div>
                 </div>
+
 
                 <main className="md:col-span-2 bg-[#3a3f4a] p-4 rounded-md border border-gray-600 flex flex-col items-center justify-start gap-4">
                    {workflowStage === 'spritesheet' && (
