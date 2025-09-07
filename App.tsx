@@ -175,7 +175,7 @@ const App: React.FC = () => {
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             const safeFilename = designToExport.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            link.download = `sprite-artisan-${safeFilename || 'design'}.json`;
+            link.download = `pixel-art-spritesheet-creator-${safeFilename || 'design'}.json`;
             
             document.body.appendChild(link);
             link.click();
@@ -390,7 +390,7 @@ const App: React.FC = () => {
     return (
         <div className="bg-[#282c34] min-h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
             <header className="text-center border-b border-gray-600 pb-2">
-                <h1 className="text-2xl font-bold text-cyan-400">Pixel Sprite Artisan AI</h1>
+                <h1 className="text-2xl font-bold text-cyan-400">Pixel-art Spritesheet Creator</h1>
                 <p className="text-sm text-gray-400">Create game-ready sprite sheets with AI</p>
             </header>
 
