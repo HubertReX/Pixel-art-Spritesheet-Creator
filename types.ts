@@ -20,6 +20,9 @@ export interface AnimationPose {
     name: string;
     prompt?: string; // A more detailed prompt for the AI
     viewpoints: string[];
+    isAnimated?: boolean;
+    frameCount?: number;
+    animationType?: string;
 }
 
 export interface Log {
@@ -33,9 +36,6 @@ export interface Design {
     name: string;
     prompt: string;
     spriteSize: number;
-    frameCount: number;
-    animationType: string;
-    generateAnimation: boolean;
     animationPoses: AnimationPose[];
     baseCharacter: BaseCharacter | null;
     spriteGrid: (Sprite | null)[][];

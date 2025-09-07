@@ -1,5 +1,6 @@
 
 
+
 import React from 'react';
 import { PlusIcon, MinusIcon, ChevronDownIcon } from './icons';
 import { AnimationPose } from '../types';
@@ -7,14 +8,9 @@ import { AnimationPose } from '../types';
 interface ControlsProps {
     spriteSize: number;
     setSpriteSize: (size: number) => void;
-    frameCount: number;
-    setFrameCount: (count: number) => void;
     animationPoses: AnimationPose[];
-    setAnimationPoses: (poses: AnimationPose[]) => void;
-    generateAnimation: boolean;
-    setGenerateAnimation: (generate: boolean) => void;
-    animationType: string;
-    setAnimationType: (type: string) => void;
+    // FIX: Correctly type the state setter prop to accept a function update.
+    setAnimationPoses: (poses: React.SetStateAction<AnimationPose[]>) => void;
     onBack: () => void;
     baseCharacterPreview: string;
     previewZoom: number;
@@ -22,34 +18,25 @@ interface ControlsProps {
     onRemovePose: (id: string) => void;
     expandedPoseIds: string[];
     setExpandedPoseIds: (ids: React.SetStateAction<string[]>) => void;
-    isAnimationExpanded: boolean;
-    setIsAnimationExpanded: (isExpanded: boolean) => void;
 }
 
 const Controls: React.FC<ControlsProps> = ({
-    spriteSize, setSpriteSize, frameCount, setFrameCount,
-    animationPoses, setAnimationPoses, generateAnimation, setGenerateAnimation,
-    animationType, setAnimationType, onBack, baseCharacterPreview,
-    previewZoom, setPreviewZoom, onRemovePose, expandedPoseIds, setExpandedPoseIds,
-    isAnimationExpanded, setIsAnimationExpanded
+    spriteSize, setSpriteSize, animationPoses, setAnimationPoses, 
+    onBack, baseCharacterPreview, previewZoom, setPreviewZoom, 
+    onRemovePose, expandedPoseIds, setExpandedPoseIds
 }) => {
     
     const allViewpoints = ['front', 'back', 'left', 'right'];
 
-    const handlePoseNameChange = (id: string, newName: string) => {
-        setAnimationPoses(animationPoses.map(pose => 
-            pose.id === id ? { ...pose, name: newName } : pose
-        ));
-    };
-
-    const handlePosePromptChange = (id: string, newPrompt: string) => {
-        setAnimationPoses(animationPoses.map(pose => 
-            pose.id === id ? { ...pose, prompt: newPrompt } : pose
+    const handlePoseChange = (id: string, key: keyof AnimationPose, value: any) => {
+        setAnimationPoses(prevPoses => prevPoses.map(pose => 
+            pose.id === id ? { ...pose, [key]: value } : pose
         ));
     };
 
     const handleViewpointChange = (poseId: string, viewpoint: string) => {
-        setAnimationPoses(animationPoses.map(pose => {
+        // FIX: Use functional update to avoid stale state.
+        setAnimationPoses(prevPoses => prevPoses.map(pose => {
             if (pose.id === poseId) {
                 const newSelection = pose.viewpoints.includes(viewpoint)
                     ? pose.viewpoints.filter(v => v !== viewpoint)
@@ -61,13 +48,15 @@ const Controls: React.FC<ControlsProps> = ({
     };
 
     const handleSelectAll = (poseId: string) => {
-         setAnimationPoses(animationPoses.map(pose => 
+        // FIX: Use functional update to avoid stale state.
+         setAnimationPoses(prevPoses => prevPoses.map(pose => 
             pose.id === poseId ? { ...pose, viewpoints: allViewpoints } : pose
         ));
     };
 
     const handleDeselectAll = (poseId: string) => {
-        setAnimationPoses(animationPoses.map(pose => 
+        // FIX: Use functional update to avoid stale state.
+        setAnimationPoses(prevPoses => prevPoses.map(pose => 
             pose.id === poseId ? { ...pose, viewpoints: [] } : pose
         ));
     };
@@ -79,8 +68,12 @@ const Controls: React.FC<ControlsProps> = ({
             name: 'Attack',
             prompt: 'A dynamic attack pose, swinging a weapon.',
             viewpoints: ['front'],
+            isAnimated: true,
+            frameCount: 4,
+            animationType: 'attack'
         };
-        setAnimationPoses([...animationPoses, newPose]);
+        // FIX: Use functional update to avoid stale state.
+        setAnimationPoses(prevPoses => [...prevPoses, newPose]);
         setExpandedPoseIds(prev => [...prev, newPoseId]);
     };
 
@@ -92,10 +85,6 @@ const Controls: React.FC<ControlsProps> = ({
         setExpandedPoseIds(prev =>
             prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
         );
-    };
-
-    const toggleAnimationExpansion = () => {
-        setIsAnimationExpanded(!isAnimationExpanded);
     };
     
     return (
@@ -150,7 +139,7 @@ const Controls: React.FC<ControlsProps> = ({
             </div>
 
             <div className="border-t border-gray-600 pt-4 flex flex-col gap-4">
-                <h3 className="text-base font-bold text-gray-300">A. Define Poses</h3>
+                <h3 className="text-base font-bold text-gray-300">Define Poses</h3>
                 <div className="flex flex-col gap-2">
                     {animationPoses.map((pose, index) => {
                         const isExpanded = expandedPoseIds.includes(pose.id);
@@ -164,7 +153,7 @@ const Controls: React.FC<ControlsProps> = ({
                                     <input
                                         type="text"
                                         value={pose.name}
-                                        onChange={(e) => handlePoseNameChange(pose.id, e.target.value)}
+                                        onChange={(e) => handlePoseChange(pose.id, 'name', e.target.value)}
                                         onClick={(e) => e.stopPropagation()}
                                         className="bg-transparent text-white font-semibold focus:outline-none focus:bg-gray-800 rounded px-1 -ml-1 w-full"
                                         aria-label={`Pose name for pose ${index + 1}`}
@@ -187,20 +176,20 @@ const Controls: React.FC<ControlsProps> = ({
                                 {isExpanded && (
                                     <>
                                         {index > 0 && (
-                                            <div className="flex flex-col gap-1">
+                                            <div className="flex flex-col gap-1 mt-2">
                                                 <label htmlFor={`pose-prompt-${pose.id}`} className="text-sm font-medium text-gray-300">Pose Prompt (for AI)</label>
                                                 <textarea
                                                     id={`pose-prompt-${pose.id}`}
                                                     rows={2}
                                                     value={pose.prompt || ''}
-                                                    onChange={(e) => handlePosePromptChange(pose.id, e.target.value)}
+                                                    onChange={(e) => handlePoseChange(pose.id, 'prompt', e.target.value)}
                                                     placeholder="e.g., swinging a heavy two-handed axe"
                                                     className="w-full bg-gray-800 text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none text-sm"
                                                 />
                                             </div>
                                         )}
 
-                                        <div>
+                                        <div className="mt-2">
                                             <div className="flex justify-between items-baseline mb-2">
                                                 <label className="text-sm font-medium text-gray-300">Select Viewpoints</label>
                                                 <div className="text-xs">
@@ -223,6 +212,46 @@ const Controls: React.FC<ControlsProps> = ({
                                                 ))}
                                             </div>
                                         </div>
+
+                                        <div className="border-t border-gray-600 mt-3 pt-3 space-y-3">
+                                            <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!pose.isAnimated}
+                                                    onChange={(e) => handlePoseChange(pose.id, 'isAnimated', e.target.checked)}
+                                                    className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
+                                                />
+                                                <span>Generate Animation Frames</span>
+                                            </label>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label htmlFor={`frameCount-${pose.id}`} className="block text-sm font-medium text-gray-300 mb-1">Anim Frames</label>
+                                                    <input
+                                                        type="number"
+                                                        id={`frameCount-${pose.id}`}
+                                                        value={pose.frameCount}
+                                                        onChange={(e) => handlePoseChange(pose.id, 'frameCount', parseInt(e.target.value, 10))}
+                                                        className="w-full bg-gray-800 text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
+                                                        min="1"
+                                                        max="16"
+                                                        disabled={!pose.isAnimated}
+                                                    />
+                                                </div>
+                                                <div>
+                                                <label htmlFor={`animationType-${pose.id}`} className="block text-sm font-medium text-gray-300 mb-1">Animation Type</label>
+                                                    <input
+                                                        type="text"
+                                                        id={`animationType-${pose.id}`}
+                                                        aria-label="Animation type"
+                                                        value={pose.animationType}
+                                                        onChange={(e) => handlePoseChange(pose.id, 'animationType', e.target.value)}
+                                                        placeholder="e.g. walk, attack"
+                                                        className="w-full bg-gray-800 text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
+                                                        disabled={!pose.isAnimated}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </>
                                 )}
                             </div>
@@ -232,58 +261,6 @@ const Controls: React.FC<ControlsProps> = ({
                         <PlusIcon/> Add Pose
                     </button>
                 </div>
-            </div>
-
-            <div className="border-t border-gray-600 pt-4 flex flex-col gap-2">
-                <div
-                    className="flex justify-between items-center cursor-pointer"
-                    onClick={toggleAnimationExpansion}
-                    aria-expanded={isAnimationExpanded}
-                >
-                    <h3 className="text-base font-bold text-gray-300">B. Animate?</h3>
-                    <ChevronDownIcon className={`transform transition-transform duration-200 ${isAnimationExpanded ? 'rotate-180' : ''}`} />
-                </div>
-                {isAnimationExpanded && (
-                     <div className="space-y-3 pt-2">
-                        <label className="flex items-center space-x-2 text-sm cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={generateAnimation}
-                                onChange={(e) => setGenerateAnimation(e.target.checked)}
-                                className="h-4 w-4 bg-gray-800 border-gray-600 rounded text-cyan-600 focus:ring-cyan-500"
-                            />
-                            <span>Generate Animation Frames</span>
-                        </label>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label htmlFor="frameCount" className="block text-sm font-medium text-gray-300 mb-1">Anim Frames</label>
-                                <input
-                                    type="number"
-                                    id="frameCount"
-                                    value={frameCount}
-                                    onChange={(e) => setFrameCount(parseInt(e.target.value, 10))}
-                                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
-                                    min="1"
-                                    max="16"
-                                    disabled={!generateAnimation}
-                                />
-                            </div>
-                            <div>
-                            <label htmlFor="animationType" className="block text-sm font-medium text-gray-300 mb-1">Animation Type</label>
-                                <input
-                                    type="text"
-                                    id="animationType"
-                                    aria-label="Animation type"
-                                    value={animationType}
-                                    onChange={(e) => setAnimationType(e.target.value)}
-                                    placeholder="e.g. walk, run"
-                                    className="w-full bg-[#282c34] text-white p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-cyan-500 focus:outline-none disabled:bg-gray-700 disabled:text-gray-400"
-                                    disabled={!generateAnimation}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );

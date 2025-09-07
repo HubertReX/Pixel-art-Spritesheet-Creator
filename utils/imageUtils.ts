@@ -1,5 +1,6 @@
 
 import { Sprite } from './types';
+import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 export const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -99,8 +100,92 @@ export const flipImageHorizontally = (base64Image: string): Promise<string> => {
     });
 };
 
-export const combineSprites = (grid: (Sprite | null)[][], spriteSize: number): Promise<string> => {
+/**
+ * Processes a single sprite image: finds the character, crops it,
+ * downscales it to the target sprite size with transparency, and returns the ImageData.
+ */
+export const processSpriteFrame = (sprite: Sprite, spriteSize: number): Promise<ImageData> => {
     return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            if (!tempCtx) return reject(new Error('Could not create temporary canvas context.'));
+            
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            tempCtx.drawImage(img, 0, 0);
+
+            const sourceImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+            const sourceData = sourceImageData.data;
+            let minX = img.width, minY = img.height, maxX = -1, maxY = -1;
+
+            for (let y = 0; y < img.height; y++) {
+                for (let x = 0; x < img.width; x++) {
+                    const i = (y * img.width + x) * 4;
+                    if (!isMagentaLike(sourceData[i], sourceData[i + 1], sourceData[i + 2])) {
+                        minX = Math.min(minX, x);
+                        minY = Math.min(minY, y);
+                        maxX = Math.max(maxX, x);
+                        maxY = Math.max(maxY, y);
+                    }
+                }
+            }
+            
+            const downscaledCanvas = document.createElement('canvas');
+            downscaledCanvas.width = spriteSize;
+            downscaledCanvas.height = spriteSize;
+            const downscaledCtx = downscaledCanvas.getContext('2d');
+            
+            if (downscaledCtx && maxX !== -1) {
+                const bboxWidth = maxX - minX + 1;
+                const bboxHeight = maxY - minY + 1;
+                const sourceSquareSize = Math.max(bboxWidth, bboxHeight);
+                const sourceSquareX = minX - (sourceSquareSize - bboxWidth) / 2;
+                const sourceSquareY = minY - (sourceSquareSize - bboxHeight) / 2;
+                
+                const downscaledImageData = downscaledCtx.createImageData(spriteSize, spriteSize);
+                const downscaledData = downscaledImageData.data;
+                const pixelBlockSize = sourceSquareSize / spriteSize;
+                const offset = pixelBlockSize / 2;
+
+                for (let y = 0; y < spriteSize; y++) {
+                    for (let x = 0; x < spriteSize; x++) {
+                        const sx = Math.floor(sourceSquareX + x * pixelBlockSize + offset);
+                        const sy = Math.floor(sourceSquareY + y * pixelBlockSize + offset);
+                        
+                        const clampedSx = Math.max(0, Math.min(img.width - 1, sx));
+                        const clampedSy = Math.max(0, Math.min(img.height - 1, sy));
+                        const sourcePixelIndex = (clampedSy * img.width + clampedSx) * 4;
+                        const targetPixelIndex = (y * spriteSize + x) * 4;
+                        
+                        const rVal = sourceData[sourcePixelIndex];
+                        const gVal = sourceData[sourcePixelIndex + 1];
+                        const bVal = sourceData[sourcePixelIndex + 2];
+
+                        if (isMagentaLike(rVal, gVal, bVal)) {
+                            downscaledData[targetPixelIndex + 3] = 0;
+                        } else {
+                            downscaledData[targetPixelIndex]     = rVal;
+                            downscaledData[targetPixelIndex + 1] = gVal;
+                            downscaledData[targetPixelIndex + 2] = bVal;
+                            downscaledData[targetPixelIndex + 3] = 255;
+                        }
+                    }
+                }
+                downscaledCtx.putImageData(downscaledImageData, 0, 0);
+            }
+            
+            resolve(downscaledCtx.getImageData(0, 0, spriteSize, spriteSize));
+        };
+        img.onerror = (err) => reject(err);
+        img.src = sprite.imageUrl;
+    });
+};
+
+
+export const combineSprites = (grid: (Sprite | null)[][], spriteSize: number): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
         const rows = grid.length;
         if (rows === 0) return resolve('');
         const cols = grid[0]?.length || 0;
@@ -112,122 +197,65 @@ export const combineSprites = (grid: (Sprite | null)[][], spriteSize: number): P
         const ctx = canvas.getContext('2d');
 
         if (!ctx) return reject(new Error('Could not get canvas context'));
-
         ctx.imageSmoothingEnabled = false;
 
-        let loadedImages = 0;
-        const totalImages = grid.flat().filter(Boolean).length;
-        
-        if (totalImages === 0) {
+        const allSprites = grid.flat();
+        if (allSprites.every(s => !s)) {
             return resolve(canvas.toDataURL('image/png'));
         }
 
-        const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-        if (!tempCtx) {
-            return reject(new Error('Could not create temporary canvas context for processing.'));
-        }
+        const promises: Promise<{r: number, c: number, data: ImageData}>[] = [];
 
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
                 const sprite = grid[r][c];
                 if (sprite) {
-                    const img = new Image();
-                    img.onload = () => {
-                        // Draw image to a temporary canvas for analysis
-                        tempCanvas.width = img.width;
-                        tempCanvas.height = img.height;
-                        tempCtx.drawImage(img, 0, 0);
-
-                        // 1. Find the bounding box of non-magenta pixels
-                        const sourceImageData = tempCtx.getImageData(0, 0, img.width, img.height);
-                        const sourceData = sourceImageData.data;
-                        let minX = img.width, minY = img.height, maxX = -1, maxY = -1;
-
-                        for (let y = 0; y < img.height; y++) {
-                            for (let x = 0; x < img.width; x++) {
-                                const i = (y * img.width + x) * 4;
-                                // Check if pixel is NOT magenta-like
-                                if (!isMagentaLike(sourceData[i], sourceData[i + 1], sourceData[i + 2])) {
-                                    minX = Math.min(minX, x);
-                                    minY = Math.min(minY, y);
-                                    maxX = Math.max(maxX, x);
-                                    maxY = Math.max(maxY, y);
-                                }
-                            }
-                        }
-                        
-                        const downscaledCanvas = document.createElement('canvas');
-                        downscaledCanvas.width = spriteSize;
-                        downscaledCanvas.height = spriteSize;
-                        const downscaledCtx = downscaledCanvas.getContext('2d');
-                        
-                        if (downscaledCtx && maxX !== -1) { // Check if the image is not empty
-                            // 2. Define a square crop region centered on the character
-                            const bboxWidth = maxX - minX + 1;
-                            const bboxHeight = maxY - minY + 1;
-                            const sourceSquareSize = Math.max(bboxWidth, bboxHeight);
-                            const sourceSquareX = minX - (sourceSquareSize - bboxWidth) / 2;
-                            const sourceSquareY = minY - (sourceSquareSize - bboxHeight) / 2;
-                            
-                            // 3. Perform pixel-perfect downscaling from the cropped region
-                            const downscaledImageData = downscaledCtx.createImageData(spriteSize, spriteSize);
-                            const downscaledData = downscaledImageData.data;
-                            const pixelBlockSize = sourceSquareSize / spriteSize;
-                            const offset = pixelBlockSize / 2;
-
-                            for (let y = 0; y < spriteSize; y++) {
-                                for (let x = 0; x < spriteSize; x++) {
-                                    // Find the center of the source pixel block in the cropped area
-                                    const sx = Math.floor(sourceSquareX + x * pixelBlockSize + offset);
-                                    const sy = Math.floor(sourceSquareY + y * pixelBlockSize + offset);
-                                    
-                                    // Clamp coordinates to be within the source image bounds
-                                    const clampedSx = Math.max(0, Math.min(img.width - 1, sx));
-                                    const clampedSy = Math.max(0, Math.min(img.height - 1, sy));
-
-                                    const sourcePixelIndex = (clampedSy * img.width + clampedSx) * 4;
-                                    const targetPixelIndex = (y * spriteSize + x) * 4;
-                                    
-                                    const rVal = sourceData[sourcePixelIndex];
-                                    const gVal = sourceData[sourcePixelIndex + 1];
-                                    const bVal = sourceData[sourcePixelIndex + 2];
-
-                                    // If the sampled pixel is magenta-like, make it transparent
-                                    if (isMagentaLike(rVal, gVal, bVal)) {
-                                        downscaledData[targetPixelIndex] = 0;
-                                        downscaledData[targetPixelIndex + 1] = 0;
-                                        downscaledData[targetPixelIndex + 2] = 0;
-                                        downscaledData[targetPixelIndex + 3] = 0; // transparent
-                                    } else {
-                                        downscaledData[targetPixelIndex]     = rVal;
-                                        downscaledData[targetPixelIndex + 1] = gVal;
-                                        downscaledData[targetPixelIndex + 2] = bVal;
-                                        downscaledData[targetPixelIndex + 3] = sourceData[sourcePixelIndex + 3];
-                                    }
-                                }
-                            }
-                            downscaledCtx.putImageData(downscaledImageData, 0, 0);
-                        }
-                        // If image was empty, the downscaledCanvas remains transparent, which is correct.
-
-                        // 4. Draw the final cropped & downscaled sprite to the main spritesheet
-                        ctx.drawImage(downscaledCanvas, c * spriteSize, r * spriteSize);
-
-                        loadedImages++;
-                        if (loadedImages === totalImages) {
-                            resolve(canvas.toDataURL('image/png'));
-                        }
-                    };
-                    img.onerror = () => {
-                        loadedImages++;
-                         if (loadedImages === totalImages) {
-                            resolve(canvas.toDataURL('image/png'));
-                        }
-                    };
-                    img.src = sprite.imageUrl;
+                    promises.push(
+                        processSpriteFrame(sprite, spriteSize).then(data => ({ r, c, data }))
+                    );
                 }
             }
         }
+        
+        try {
+            const processedFrames = await Promise.all(promises);
+            processedFrames.forEach(({ r, c, data }) => {
+                ctx.putImageData(data, c * spriteSize, r * spriteSize);
+            });
+            resolve(canvas.toDataURL('image/png'));
+        } catch(err) {
+            reject(err);
+        }
     });
+};
+
+/**
+ * Generates a GIF from an array of sprites.
+ */
+export const generateGif = async (sprites: Sprite[], spriteSize: number, fps: number): Promise<string> => {
+    if (sprites.length === 0) {
+        throw new Error("No sprites provided for GIF generation.");
+    }
+    
+    const gif = GIFEncoder();
+    const delay = 1000 / fps;
+
+    const framesData = await Promise.all(
+        sprites.map(sprite => processSpriteFrame(sprite, spriteSize))
+    );
+
+    // Create a palette from the first frame. Use 'rgba4444' for transparency support.
+    // The first color in the palette will be transparent.
+    const palette = quantize(framesData[0].data, 256, { format: 'rgba4444' });
+
+    for (const imageData of framesData) {
+        // Apply the shared palette to the frame
+        const index = applyPalette(imageData.data, palette, 'rgba4444');
+        gif.writeFrame(index, imageData.width, imageData.height, { palette, delay, transparent: true, dispose: 2 });
+    }
+
+    gif.finish();
+    const buffer = gif.bytesView();
+    const blob = new Blob([buffer], { type: 'image/gif' });
+    return URL.createObjectURL(blob);
 };

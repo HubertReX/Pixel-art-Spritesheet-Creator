@@ -20,7 +20,7 @@ export class SpriteArtisanDB extends Dexie {
         // This upgrade function is called when a client has a db version < 2.
         // We add the new timestamp properties to all existing designs.
         const now = Date.now();
-        return tx.table('designs').toCollection().modify(design => {
+        return tx.table('designs').toCollection().modify((design: any) => {
             design.createdAt = design.createdAt || now;
             design.lastModified = design.lastModified || now;
         });
@@ -30,7 +30,7 @@ export class SpriteArtisanDB extends Dexie {
     (this as Dexie).version(3).stores({
         designs: 'id, name, lastModified' // Schema definition doesn't change, only the object shape
     }).upgrade(tx => {
-        return tx.table('designs').toCollection().modify(design => {
+        return tx.table('designs').toCollection().modify((design: any) => {
             // Check if the old property exists and the new one doesn't
             if (design.selectedViewpoints && !design.animationPoses) {
                 // Migrate the old data to the new structure
@@ -41,6 +41,38 @@ export class SpriteArtisanDB extends Dexie {
                 }];
                 // Remove the old, now-redundant property
                 delete design.selectedViewpoints;
+            }
+        });
+    });
+
+    // Version 4: Move global animation properties to per-pose properties
+    (this as Dexie).version(4).stores({
+        designs: 'id, name, lastModified' // Schema definition doesn't change
+    }).upgrade(tx => {
+        return tx.table('designs').toCollection().modify((design: any) => {
+            if (design.generateAnimation !== undefined || design.frameCount !== undefined) {
+                design.animationPoses = (design.animationPoses || []).map((pose: AnimationPose) => {
+                    const newPose: AnimationPose = {...pose};
+                    const isDefaultStanding = newPose.id === 'default-standing' && newPose.name === 'Standing';
+
+                    if (newPose.isAnimated === undefined) {
+                        newPose.isAnimated = isDefaultStanding ? false : design.generateAnimation;
+                    }
+                    if (newPose.frameCount === undefined) {
+                        newPose.frameCount = design.frameCount;
+                    }
+                    if (newPose.animationType === undefined) {
+                        const poseNameLower = newPose.name.toLowerCase();
+                        if (poseNameLower.includes('attack')) newPose.animationType = 'attack';
+                        else if (poseNameLower.includes('walk')) newPose.animationType = 'walk';
+                        else if (poseNameLower.includes('run')) newPose.animationType = 'run';
+                        else newPose.animationType = design.animationType;
+                    }
+                    return newPose;
+                });
+                delete design.generateAnimation;
+                delete design.frameCount;
+                delete design.animationType;
             }
         });
     });

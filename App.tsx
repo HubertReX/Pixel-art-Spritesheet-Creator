@@ -114,14 +114,19 @@ const App: React.FC = () => {
     
     // Character & Grid State
     const [spriteSize, setSpriteSize] = useState<number>(32);
-    const [frameCount, setFrameCount] = useState<number>(4);
     const [initialPrompt, setInitialPrompt] = useState<string>('');
     const [initialImage, setInitialImage] = useState<File | null>(null);
     const [spriteGrid, setSpriteGrid] = useState<(Sprite | null)[][]>([]);
     const [spriteGridViewpoints, setSpriteGridViewpoints] = useState<string[]>([]);
-    const [animationPoses, setAnimationPoses] = useState<AnimationPose[]>([{ id: 'default-standing', name: 'Standing', viewpoints: ['front'] }]);
-    const [generateAnimation, setGenerateAnimation] = useState<boolean>(false);
-    const [animationType, setAnimationType] = useState<string>('walk');
+    const [animationPoses, setAnimationPoses] = useState<AnimationPose[]>([{ 
+        id: 'default-standing', 
+        name: 'Standing', 
+        prompt: '', 
+        viewpoints: ['front'],
+        isAnimated: false,
+        frameCount: 4,
+        animationType: 'idle'
+    }]);
     const [baseCharacter, setBaseCharacter] = useState<BaseCharacter | null>(null);
     
     // UI State
@@ -134,7 +139,6 @@ const App: React.FC = () => {
     const [workflowStage, setWorkflowStage] = useState<WorkflowStage>('conception');
     const [logs, setLogs] = useState<Log[]>([]);
     const [expandedPoseIds, setExpandedPoseIds] = useState<string[]>(['default-standing']);
-    const [isAnimationExpanded, setIsAnimationExpanded] = useState<boolean>(false);
     const [confirmation, setConfirmation] = useState<{
         isOpen: boolean;
         message: string;
@@ -221,12 +225,16 @@ const App: React.FC = () => {
         setSpriteGrid([]);
         setSpriteGridViewpoints([]);
         setSpriteSize(32);
-        setFrameCount(4);
-        setAnimationPoses([{ id: 'default-standing', name: 'Standing', viewpoints: ['front'], prompt: '' }]);
+        setAnimationPoses([{ 
+            id: 'default-standing', 
+            name: 'Standing', 
+            prompt: '', 
+            viewpoints: ['front'],
+            isAnimated: false,
+            frameCount: 4,
+            animationType: 'idle'
+        }]);
         setExpandedPoseIds(['default-standing']);
-        setIsAnimationExpanded(false);
-        setGenerateAnimation(false);
-        setAnimationType('walk');
         setWorkflowStage('conception');
         setSelectedSprite(null);
         setPreviewBackgroundType('transparent');
@@ -250,9 +258,6 @@ const App: React.FC = () => {
             name: designName,
             prompt: initialPrompt,
             spriteSize,
-            frameCount,
-            animationType,
-            generateAnimation,
             animationPoses,
             baseCharacter,
             spriteGrid,
@@ -287,15 +292,23 @@ const App: React.FC = () => {
             setDesignName(designToLoad.name);
             setInitialPrompt(designToLoad.prompt);
             setSpriteSize(designToLoad.spriteSize);
-            setFrameCount(designToLoad.frameCount);
-            setAnimationType(designToLoad.animationType);
-            setGenerateAnimation(designToLoad.generateAnimation);
-            setAnimationPoses(designToLoad.animationPoses);
+            
+            // Hydrate per-pose animation properties from old global properties if they exist
+            const loadedPoses = (designToLoad.animationPoses || []).map(p => {
+                const isDefaultStanding = p.id === 'default-standing' && p.name === 'Standing';
+                return {
+                    ...p,
+                    isAnimated: p.isAnimated ?? ((designToLoad as any).generateAnimation && !isDefaultStanding) ?? false,
+                    frameCount: p.frameCount ?? (designToLoad as any).frameCount ?? 4,
+                    animationType: p.animationType ?? (designToLoad as any).animationType ?? 'walk'
+                };
+            });
+            setAnimationPoses(loadedPoses);
+
             setBaseCharacter(designToLoad.baseCharacter);
             setSpriteGrid(designToLoad.spriteGrid);
             setSpriteGridViewpoints(allViewpoints);
             setExpandedPoseIds(['default-standing']);
-            setIsAnimationExpanded(designToLoad.generateAnimation);
             setPreviewBackgroundType(designToLoad.previewBackgroundType || 'transparent');
             setCustomBackground(designToLoad.customBackground || defaultCustomBackground);
             
@@ -402,7 +415,7 @@ const App: React.FC = () => {
 
             const backupData = {
                 source: "pixel-art-spritesheet-creator-backup",
-                version: 3, // Corresponds to DB version
+                version: 4, // Corresponds to DB version
                 designs: allDesigns,
             };
 
@@ -418,7 +431,8 @@ const App: React.FC = () => {
             document.body.removeChild(link);
             URL.revokeObjectURL(link.href);
 
-        } catch (err) {
+        } catch (err)
+        {
             console.error(err);
             setError(`Failed to export all designs: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
@@ -433,20 +447,19 @@ const App: React.FC = () => {
         
         const migrateDesign = (d: any): Design => {
             const now = Date.now();
-            const migrated: Design = {
-                ...d,
-                createdAt: d.createdAt || now,
-                lastModified: d.lastModified || now,
-                previewBackgroundType: d.previewBackgroundType || 'transparent',
-                customBackground: d.customBackground ?? undefined,
-            };
+            let migrated: Design = { ...d };
 
-            // V2 -> V3 migration
-            if ((d as any).selectedViewpoints && !migrated.animationPoses) {
+            migrated.createdAt = d.createdAt || now;
+            migrated.lastModified = d.lastModified || now;
+            migrated.previewBackgroundType = d.previewBackgroundType || 'transparent';
+            migrated.customBackground = d.customBackground ?? undefined;
+
+            // V2 -> V3 migration (selectedViewpoints -> animationPoses)
+            if (d.selectedViewpoints && !d.animationPoses) {
                 migrated.animationPoses = [{ 
                     id: 'default-standing', 
                     name: 'Standing', 
-                    viewpoints: (d as any).selectedViewpoints 
+                    viewpoints: d.selectedViewpoints 
                 }];
                 delete (migrated as any).selectedViewpoints;
             }
@@ -455,14 +468,37 @@ const App: React.FC = () => {
                 migrated.animationPoses = [{ id: 'default-standing', name: 'Standing', viewpoints: ['front'] }];
             }
 
-            // Ensure all poses have the correct shape (for V4 prompt field, though optional)
+            // V3 -> V4 migration (global animation props -> per-pose props)
+            if (d.generateAnimation !== undefined || d.frameCount !== undefined) {
+                 migrated.animationPoses = migrated.animationPoses.map((p: any) => {
+                    const isDefaultStanding = p.id === 'default-standing' && p.name === 'Standing';
+                    const newPose = { ...p };
+                    if (newPose.isAnimated === undefined) {
+                        newPose.isAnimated = (d.generateAnimation && !isDefaultStanding) ?? false;
+                    }
+                    if (newPose.frameCount === undefined) {
+                        newPose.frameCount = d.frameCount ?? 4;
+                    }
+                    if (newPose.animationType === undefined) {
+                        newPose.animationType = d.animationType ?? 'walk';
+                    }
+                    return newPose;
+                });
+                delete (migrated as any).generateAnimation;
+                delete (migrated as any).frameCount;
+                delete (migrated as any).animationType;
+            }
+
+            // Final hydration to ensure all poses have full animation properties
             migrated.animationPoses = migrated.animationPoses.map((p: any) => ({
                 id: p.id || Math.random().toString(36).substring(7),
                 name: p.name || 'Pose',
                 viewpoints: p.viewpoints || [],
-                prompt: p.prompt, // Will be undefined if not present, which is fine
+                prompt: p.prompt,
+                isAnimated: p.isAnimated ?? false,
+                frameCount: p.frameCount ?? 4,
+                animationType: p.animationType ?? 'walk'
             }));
-
 
             return migrated;
         }
@@ -588,19 +624,25 @@ const App: React.FC = () => {
             const poseIndex = animationPoses.findIndex(p => p.id === idToRemove);
             if (poseIndex === -1) return;
 
+            // Calculate start row and number of rows to remove from the grid
+            let startRowIndex = 0;
+            for (let i = 0; i < poseIndex; i++) {
+                const p = animationPoses[i];
+                startRowIndex += p.isAnimated ? (p.frameCount || 1) : 1;
+            }
+            const poseToRemove = animationPoses[poseIndex];
+            const rowsToRemove = poseToRemove.isAnimated ? (poseToRemove.frameCount || 1) : 1;
+
             // Remove the pose from the list
             const newAnimationPoses = animationPoses.filter(p => p.id !== idToRemove);
             setAnimationPoses(newAnimationPoses);
             setExpandedPoseIds(prev => prev.filter(id => id !== idToRemove));
 
             // Remove corresponding rows from the sprite grid if it exists
-            if (spriteGrid.length > 0) {
-                const framesPerPose = generateAnimation ? frameCount : 1;
-                const startRowIndex = poseIndex * framesPerPose;
-                
+            if (spriteGrid.length > 0 && startRowIndex < spriteGrid.length) {
                 const updatedSpriteGrid = [
                     ...spriteGrid.slice(0, startRowIndex),
-                    ...spriteGrid.slice(startRowIndex + framesPerPose)
+                    ...spriteGrid.slice(startRowIndex + rowsToRemove)
                 ];
                 setSpriteGrid(updatedSpriteGrid);
             }
@@ -626,19 +668,19 @@ const App: React.FC = () => {
         setError(null);
         
         const fixedViewpoints = allViewpoints;
-        
         setSpriteGridViewpoints(fixedViewpoints);
         setSelectedSprite(null);
         
-        const numPoses = animationPoses.length;
-        const framesPerPose = generateAnimation ? frameCount : 1;
-        const numRows = numPoses * framesPerPose;
+        let totalRows = 0;
+        animationPoses.forEach(p => {
+            totalRows += p.isAnimated ? (p.frameCount || 1) : 1;
+        });
+
         const numCols = fixedViewpoints.length;
     
         // Preserve existing sprites while resizing the grid for the new generation settings.
-        // This prevents sprites from being cleared if they are not part of the current generation batch.
         const oldGrid = spriteGrid;
-        const newGrid: (Sprite | null)[][] = Array(numRows).fill(null).map((_, r) =>
+        const newGrid: (Sprite | null)[][] = Array(totalRows).fill(null).map((_, r) =>
             Array(numCols).fill(null).map((__, c) =>
                 (oldGrid[r] && oldGrid[r][c] !== undefined) ? oldGrid[r][c] : null
             )
@@ -650,12 +692,14 @@ const App: React.FC = () => {
     
         try {
             let currentRowIndex = 0;
-            for (let poseIndex = 0; poseIndex < numPoses; poseIndex++) {
+            for (let poseIndex = 0; poseIndex < animationPoses.length; poseIndex++) {
                 const pose = animationPoses[poseIndex];
+                const framesThisPose = pose.isAnimated ? (pose.frameCount ?? 1) : 1;
                 const totalViewpointsForPose = pose.viewpoints.length;
 
-                for (let frameIndex = 0; frameIndex < framesPerPose; frameIndex++) {
+                for (let frameIndex = 0; frameIndex < framesThisPose; frameIndex++) {
                     let generatedViewpointsForFrame = 0;
+                    const absoluteRowIndex = currentRowIndex + frameIndex;
 
                     for (let colIndex = 0; colIndex < numCols; colIndex++) {
                         const viewpoint = fixedViewpoints[colIndex];
@@ -666,11 +710,9 @@ const App: React.FC = () => {
                         
                         generatedViewpointsForFrame++;
 
-                        // INTELLIGENT FLIP: If generating 'right' view, flip the 'left' view instead of asking the AI.
-                        // This overcomes model bias and ensures perfect symmetry.
                         if (viewpoint === 'right' && pose.viewpoints.includes('left')) {
                             const leftColIndex = fixedViewpoints.indexOf('left');
-                            const leftSprite = newGrid[currentRowIndex][leftColIndex];
+                            const leftSprite = newGrid[absoluteRowIndex][leftColIndex];
 
                             if (leftSprite) {
                                 setLoadingMessage(`Pose: ${pose.name}, View: right (flipping)`);
@@ -678,7 +720,7 @@ const App: React.FC = () => {
                                 addLog('Generating Sprite', {
                                     'Design': designName,
                                     'Pose': pose.name,
-                                    'Frame': generateAnimation ? `${frameIndex + 1}/${frameCount}` : undefined,
+                                    'Frame': pose.isAnimated ? `${frameIndex + 1}/${framesThisPose}` : undefined,
                                     'Viewpoint': viewpoint,
                                     'Method': 'Flipped from "left" viewpoint for symmetry. No AI call made.',
                                 });
@@ -689,25 +731,24 @@ const App: React.FC = () => {
                                 ]);
 
                                 const rightSprite: Sprite = {
-                                    id: `${currentRowIndex}-${colIndex}`,
+                                    id: `${absoluteRowIndex}-${colIndex}`,
                                     imageUrl: flippedImageUrl,
                                     previewUrl: flippedPreviewUrl,
                                     prompt: leftSprite.prompt.replace(/facing left/g, 'facing right'),
                                 };
-                                newGrid[currentRowIndex][colIndex] = rightSprite;
+                                newGrid[absoluteRowIndex][colIndex] = rightSprite;
                                 setSpriteGrid([...newGrid.map(r => [...r])]);
-                                continue; // Skip to the next viewpoint
+                                continue;
                             }
-                            // If left sprite doesn't exist for some reason, we'll fall through and let the AI try to generate it.
                         }
 
-                        // Use the detailed prompt if available, otherwise fall back to the pose name.
                         const poseDescription = pose.prompt && pose.prompt.trim() !== '' ? pose.prompt : pose.name;
+                        const animType = pose.animationType ?? 'action';
 
                         let animationState;
-                        if (generateAnimation) {
-                            const animationHint = getAnimationFrameHint(poseDescription, frameCount, frameIndex, baseCharacter.prompt);
-                            animationState = `performing a "${poseDescription}" animation (frame ${frameIndex + 1} of ${frameCount}). The character's specific action for this frame is: ${animationHint}`;
+                        if (pose.isAnimated) {
+                            const animationHint = getAnimationFrameHint(animType, framesThisPose, frameIndex, baseCharacter.prompt);
+                            animationState = `performing a "${poseDescription}" animation (frame ${frameIndex + 1} of ${framesThisPose}). The character's specific action for this frame is: ${animationHint}`;
                         } else {
                             animationState = `in a static "${poseDescription}" pose`;
                         }
@@ -715,9 +756,9 @@ const App: React.FC = () => {
                         const prompt = `A ${spriteSize}x${spriteSize} pixel art sprite of a character described as "${baseCharacter.prompt}". The character is ${animationState}, facing ${viewpoint}. Maintain a consistent character design based on the provided context images.`;
                         const fullPrompt = `${prompt}. ${basePromptEnhancer} The sprite should have the appearance of a ${spriteSize}x${spriteSize} pixel art character.`;
                         
-                        let loadingMsg = `Pose: ${pose.name} (${poseIndex + 1}/${numPoses})`;
-                        if (generateAnimation) {
-                            loadingMsg += `, Frame: ${frameIndex + 1}/${frameCount}`;
+                        let loadingMsg = `Pose: ${pose.name} (${poseIndex + 1}/${animationPoses.length})`;
+                        if (pose.isAnimated) {
+                            loadingMsg += `, Frame: ${frameIndex + 1}/${framesThisPose}`;
                         }
                         loadingMsg += `, View: ${viewpoint} (${generatedViewpointsForFrame}/${totalViewpointsForPose})`;
                         setLoadingMessage(loadingMsg);
@@ -725,7 +766,7 @@ const App: React.FC = () => {
                         addLog('Generating Sprite', {
                             'Design': designName,
                             'Pose': pose.name,
-                            'Frame': generateAnimation ? `${frameIndex + 1}/${frameCount}` : undefined,
+                            'Frame': pose.isAnimated ? `${frameIndex + 1}/${framesThisPose}` : undefined,
                             'Viewpoint': viewpoint,
                             'Prompt': `"${fullPrompt}"`,
                         });
@@ -734,21 +775,21 @@ const App: React.FC = () => {
                         const previewUrl = await removeMagentaBackground(imageUrl);
                         
                         const newSprite: Sprite = {
-                            id: `${currentRowIndex}-${colIndex}`,
+                            id: `${absoluteRowIndex}-${colIndex}`,
                             imageUrl: imageUrl,
                             previewUrl: previewUrl,
                             prompt: fullPrompt
                         };
     
-                        newGrid[currentRowIndex][colIndex] = newSprite;
+                        newGrid[absoluteRowIndex][colIndex] = newSprite;
                         setSpriteGrid([...newGrid.map(r => [...r])]);
     
                         if (contextImages.length < 10) {
                             contextImages.push({ mimeType: 'image/png', data: newSpriteBase64 });
                         }
                     }
-                    currentRowIndex++;
                 }
+                currentRowIndex += framesThisPose;
             }
         } catch (err) {
             console.error(err);
@@ -782,7 +823,6 @@ const App: React.FC = () => {
         let effectiveTargetSprite = targetSprite;
         let effectiveEditCol = col;
     
-        // If editing the right sprite, redirect the edit to the left sprite to maintain symmetry.
         if (currentViewpoint === 'right' && leftColIndex !== -1) {
             const leftSprite = spriteGrid[row][leftColIndex];
             if (leftSprite) {
@@ -796,15 +836,23 @@ const App: React.FC = () => {
         const basePromptEnhancer = `The output MUST be a single, isolated character sprite on a solid magenta background (color #FF00FF). The background must be pure, solid magenta. Do not include any text, labels, or other elements in the image.`;
         
         try {
-            const framesPerPose = generateAnimation ? frameCount : 1;
-            const poseIndex = Math.floor(row / framesPerPose);
-            const pose = animationPoses[poseIndex];
-            
+            // Find which pose this row belongs to
+            let pose: AnimationPose | null = null;
+            let cumulativeRows = 0;
+            for(const p of animationPoses) {
+                const rowsInPose = p.isAnimated ? (p.frameCount || 1) : 1;
+                if (row < cumulativeRows + rowsInPose) {
+                    pose = p;
+                    break;
+                }
+                cumulativeRows += rowsInPose;
+            }
+
             const fullPrompt = `Edit the primary input image based on this instruction: "${editPrompt}". The sprite must maintain the appearance of a ${spriteSize}x${spriteSize} pixel art style. Use the other images as context for the character's consistent design. ${basePromptEnhancer}`;
 
             addLog('Editing Sprite', {
                 'Design': designName,
-                'Pose': pose.name,
+                'Pose': pose?.name ?? 'Unknown',
                 'Viewpoint': currentViewpoint,
                 'Instruction': `"${editPrompt}"`,
                 'Prompt': `"${fullPrompt}"`,
@@ -816,14 +864,12 @@ const App: React.FC = () => {
     
             const newGrid = [...spriteGrid.map(r => [...r])];
             
-            // Update the effectively edited sprite (which is always the left or another non-right sprite).
             newGrid[row][effectiveEditCol] = {
                 ...effectiveTargetSprite,
                 imageUrl: imageUrl,
                 previewUrl: previewUrl,
             };
     
-            // If the left sprite was edited (either directly or via the right), update the right sprite by flipping.
             if (effectiveEditCol === leftColIndex && rightColIndex !== -1 && newGrid[row][rightColIndex]) {
                 setLoadingMessage('Flipping edited sprite...');
                 const [flippedImageUrl, flippedPreviewUrl] = await Promise.all([
@@ -946,7 +992,6 @@ const App: React.FC = () => {
             }
             
             setLoadingMessage('Saving final design...');
-            // Need to manually build the design object to save, as handleSaveDesign relies on other states.
             const finalDesignData: Design = { ...newDesign, spriteGrid: gridToEdit, lastModified: Date.now() };
             await saveDesign(finalDesignData);
             const finalDesigns = await getAllDesigns();
@@ -1000,6 +1045,8 @@ const App: React.FC = () => {
                 return {};
         }
     };
+    
+    const hasAnyAnimation = animationPoses.some(p => p.isAnimated && (p.frameCount ?? 0) > 1);
 
     return (
         <div className="bg-[#282c34] h-screen text-gray-200 font-mono flex flex-col p-4 gap-4 pb-12">
@@ -1070,14 +1117,8 @@ const App: React.FC = () => {
                                 <Controls
                                     spriteSize={spriteSize}
                                     setSpriteSize={setSpriteSize}
-                                    frameCount={frameCount}
-                                    setFrameCount={setFrameCount}
                                     animationPoses={animationPoses}
                                     setAnimationPoses={setAnimationPoses}
-                                    generateAnimation={generateAnimation}
-                                    setGenerateAnimation={setGenerateAnimation}
-                                    animationType={animationType}
-                                    setAnimationType={setAnimationType}
                                     onBack={handleBackToConception}
                                     baseCharacterPreview={baseCharacter?.previewUrl || ''}
                                     previewZoom={previewZoom}
@@ -1085,8 +1126,6 @@ const App: React.FC = () => {
                                     onRemovePose={handleRemovePose}
                                     expandedPoseIds={expandedPoseIds}
                                     setExpandedPoseIds={setExpandedPoseIds}
-                                    isAnimationExpanded={isAnimationExpanded}
-                                    setIsAnimationExpanded={setIsAnimationExpanded}
                                 />
                                 {selectedSprite && spriteGrid[selectedSprite.row]?.[selectedSprite.col] && (
                                     <EditorPanel
@@ -1161,7 +1200,7 @@ const App: React.FC = () => {
                                     />
                                     <span className="text-sm font-medium text-gray-300 w-10 text-center">{zoomLevel}x</span>
                                 </div>
-                                {generateAnimation && spriteGrid.length > 0 && frameCount > 1 && (
+                                {hasAnyAnimation && spriteGrid.length > 0 && (
                                      <div className="w-full flex items-center gap-4">
                                         <label htmlFor="speed-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">Anim Speed</label>
                                         <input
@@ -1201,8 +1240,6 @@ const App: React.FC = () => {
                                 zoomLevel={zoomLevel}
                                 viewpoints={spriteGridViewpoints}
                                 animationPoses={animationPoses}
-                                generateAnimation={generateAnimation}
-                                frameCount={frameCount}
                                 animationSpeed={animationSpeed}
                             />
                          )}
