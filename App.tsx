@@ -9,13 +9,14 @@ import { getAllDesigns, saveDesign, deleteDesign, bulkSaveDesigns } from './serv
 import Controls from './components/Controls';
 import SpriteGrid from './components/SpriteGrid';
 import EditorPanel from './components/EditorPanel';
-import { LoadingIcon, GenerateIcon, ExportIcon } from './components/icons';
+import { LoadingIcon, GenerateIcon, ExportIcon, ReskinIcon } from './components/icons';
 import ConceptionControls from './components/ConceptionControls';
 import CharacterPreview from './components/CharacterPreview';
 import LogConsole from './components/LogConsole';
 import PersistenceControls from './components/PersistenceControls';
 import ConfirmModal from './components/ConfirmModal';
 import BackgroundControls from './components/BackgroundControls';
+import ReskinModal from './components/ReskinModal';
 import { defaultCustomBackground } from './defaultBackground';
 
 
@@ -59,6 +60,7 @@ const App: React.FC = () => {
     }>({ isOpen: false, message: '', onConfirm: null });
     const [previewBackgroundType, setPreviewBackgroundType] = useState<PreviewBackgroundType>('transparent');
     const [customBackground, setCustomBackground] = useState<string | null>(defaultCustomBackground);
+    const [isReskinModalOpen, setIsReskinModalOpen] = useState<boolean>(false);
 
 
     const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -240,6 +242,44 @@ const App: React.FC = () => {
             "Are you sure you want to permanently delete this design? This action cannot be undone.",
             deleteAction
         );
+    };
+
+    const handleDuplicateDesign = async (id: string) => {
+        const designToDuplicate = savedDesigns.find(d => d.id === id);
+        if (!designToDuplicate) {
+            setError("Could not find the design to duplicate.");
+            return;
+        }
+
+        try {
+            const now = Date.now();
+            
+            // Deep copy using JSON stringify/parse
+            const newDesign: Design = JSON.parse(JSON.stringify(designToDuplicate));
+
+            newDesign.id = now.toString();
+            newDesign.createdAt = now;
+            newDesign.lastModified = now;
+            
+            let newName = `${designToDuplicate.name} - Copy`;
+            let copyIndex = 2;
+            while(savedDesigns.some(d => d.name === newName)) {
+                newName = `${designToDuplicate.name} - Copy ${copyIndex}`;
+                copyIndex++;
+            }
+            newDesign.name = newName;
+
+            await saveDesign(newDesign);
+            const updatedDesigns = await getAllDesigns();
+            setSavedDesigns(updatedDesigns);
+            
+            // Automatically load the new duplicated design
+            handleLoadDesign(newDesign.id, updatedDesigns);
+
+        } catch (err) {
+            console.error(err);
+            setError(`Failed to duplicate design: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
     };
 
     const handleExportDesign = (id: string) => {
@@ -735,6 +775,105 @@ const App: React.FC = () => {
         document.body.removeChild(link);
     };
 
+    const handleStartReskin = async (reskinPrompt: string) => {
+        setIsReskinModalOpen(false);
+    
+        if (!currentDesignId || spriteGrid.flat().every(s => !s)) {
+            setError("Cannot reskin an empty or unsaved design.");
+            return;
+        }
+    
+        setIsLoading(true);
+        setLoadingMessage('Preparing for reskin...');
+    
+        const designToReskin = savedDesigns.find(d => d.id === currentDesignId);
+        if (!designToReskin) {
+            setError("Could not find the current design to reskin.");
+            setIsLoading(false);
+            return;
+        }
+    
+        const now = Date.now();
+        const newDesign: Design = JSON.parse(JSON.stringify(designToReskin));
+        newDesign.id = now.toString();
+        newDesign.createdAt = now;
+        newDesign.lastModified = now;
+    
+        let newName = `${designToReskin.name} - Reskinned`;
+        let copyIndex = 2;
+        while(savedDesigns.some(d => d.name === newName)) {
+            newName = `${designToReskin.name} - Reskinned ${copyIndex}`;
+            copyIndex++;
+        }
+        newDesign.name = newName;
+    
+        await saveDesign(newDesign);
+        const updatedDesigns = await getAllDesigns();
+        setSavedDesigns(updatedDesigns);
+        handleLoadDesign(newDesign.id, updatedDesigns);
+        
+        try {
+            const gridToEdit = [...spriteGrid.map(r => [...r])];
+            const totalSpritesToProcess = gridToEdit.flat().filter(s => s !== null).length;
+            let processedCount = 0;
+    
+            for (let r = 0; r < gridToEdit.length; r++) {
+                const leftColIndex = spriteGridViewpoints.indexOf('left');
+                const rightColIndex = spriteGridViewpoints.indexOf('right');
+                const canFlip = leftColIndex !== -1 && rightColIndex !== -1;
+    
+                for (let c = 0; c < gridToEdit[r].length; c++) {
+                    const sprite = gridToEdit[r][c];
+                    if (!sprite) continue;
+    
+                    if (canFlip && c === rightColIndex && gridToEdit[r][leftColIndex]) {
+                        continue;
+                    }
+    
+                    processedCount++;
+                    setLoadingMessage(`Reskinning sprite ${processedCount} of ${totalSpritesToProcess}...`);
+    
+                    addLog('Reskinning Sprite', {
+                        'Design': newName,
+                        'Position': `Row ${r + 1}, Col ${c + 1}`,
+                        'Instruction': `"${reskinPrompt}"`
+                    });
+    
+                    const editedSpriteBase64 = await editSprite(reskinPrompt, sprite, [], spriteSize);
+                    const imageUrl = `data:image/png;base64,${editedSpriteBase64}`;
+                    const previewUrl = await removeMagentaBackground(imageUrl);
+                    
+                    gridToEdit[r][c] = { ...sprite, imageUrl, previewUrl };
+    
+                    if (canFlip && c === leftColIndex && gridToEdit[r][rightColIndex]) {
+                        const [flippedImageUrl, flippedPreviewUrl] = await Promise.all([
+                            flipImageHorizontally(imageUrl),
+                            flipImageHorizontally(previewUrl),
+                        ]);
+                        const rightSprite = gridToEdit[r][rightColIndex]!;
+                        gridToEdit[r][rightColIndex] = { ...rightSprite, imageUrl: flippedImageUrl, previewUrl: flippedPreviewUrl };
+                    }
+                    
+                    setSpriteGrid([...gridToEdit.map(row => [...row])]);
+                }
+            }
+            
+            setLoadingMessage('Saving final design...');
+            // Need to manually build the design object to save, as handleSaveDesign relies on other states.
+            const finalDesignData: Design = { ...newDesign, spriteGrid: gridToEdit, lastModified: Date.now() };
+            await saveDesign(finalDesignData);
+            const finalDesigns = await getAllDesigns();
+            setSavedDesigns(finalDesigns);
+            
+        } catch (err) {
+            console.error(err);
+            setError(`An error occurred during reskinning: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        } finally {
+            setIsLoading(false);
+            setLoadingMessage('');
+        }
+    };
+
     const handleGenerateCustomBackground = async (prompt: string) => {
         setIsLoading(true);
         setError(null);
@@ -797,6 +936,14 @@ const App: React.FC = () => {
                 />
             )}
 
+            {isReskinModalOpen && (
+                <ReskinModal
+                    isOpen={isReskinModalOpen}
+                    onClose={() => setIsReskinModalOpen(false)}
+                    onConfirm={handleStartReskin}
+                />
+            )}
+
             <div className="flex-grow grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0">
                 <div className="md:col-span-1 flex flex-col gap-4 min-h-0">
                     <div className="flex-shrink-0">
@@ -812,6 +959,7 @@ const App: React.FC = () => {
                             onExport={handleExportDesign}
                             onExportAll={handleExportAllDesigns}
                             onImport={handleImportDesign}
+                            onDuplicate={handleDuplicateDesign}
                             saveSuccess={saveSuccess}
                         />
                     </div>
@@ -877,6 +1025,15 @@ const App: React.FC = () => {
                             </button>
                             
                             {spriteGrid.length > 0 && (
+                                <>
+                                <button
+                                    onClick={() => setIsReskinModalOpen(true)}
+                                    disabled={isLoading}
+                                    className="w-full flex items-center justify-center gap-2 bg-purple-600 text-white font-bold py-2 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    <ReskinIcon />
+                                    Reskin Spritesheet...
+                                </button>
                                 <button
                                     onClick={handleExport}
                                     disabled={isLoading}
@@ -885,6 +1042,7 @@ const App: React.FC = () => {
                                     <ExportIcon />
                                     Export as PNG
                                 </button>
+                                </>
                             )}
                         </div>
                     )}

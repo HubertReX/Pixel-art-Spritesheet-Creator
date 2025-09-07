@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Design } from '../types';
-import { SaveIcon, PlusIcon, TrashIcon, CheckIcon, UploadIcon, ExportIcon, ExportAllIcon } from './icons';
+import { SaveIcon, PlusIcon, TrashIcon, CheckIcon, UploadIcon, ExportIcon, ExportAllIcon, DuplicateIcon } from './icons';
 
 interface PersistenceControlsProps {
     designs: Design[];
@@ -15,12 +15,13 @@ interface PersistenceControlsProps {
     onExport: (id: string) => void;
     onExportAll: () => void;
     onImport: (file: File) => void;
+    onDuplicate: (id: string) => void;
     saveSuccess: boolean;
 }
 
 const PersistenceControls: React.FC<PersistenceControlsProps> = ({
     designs, currentDesignId, designName, setDesignName,
-    onSave, onLoad, onDelete, onNew, onExport, onExportAll, onImport, saveSuccess
+    onSave, onLoad, onDelete, onNew, onExport, onExportAll, onImport, onDuplicate, saveSuccess
 }) => {
     const [isListOpen, setIsListOpen] = useState(false);
     const importInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +144,9 @@ const PersistenceControls: React.FC<PersistenceControlsProps> = ({
                                     <div className="flex gap-2 items-center flex-shrink-0 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={(e) => { e.stopPropagation(); onExport(d.id); }} title="Export" className="text-gray-300 hover:text-green-400" aria-label={`Export ${d.name}`}>
                                             <ExportIcon />
+                                        </button>
+                                        <button onClick={(e) => { e.stopPropagation(); onDuplicate(d.id); }} title="Duplicate" className="text-gray-300 hover:text-blue-400" aria-label={`Duplicate ${d.name}`}>
+                                            <DuplicateIcon />
                                         </button>
                                         <button onClick={(e) => { e.stopPropagation(); onDelete(d.id); }} title="Delete" className="text-gray-300 hover:text-red-400" aria-label={`Delete ${d.name}`}>
                                             <TrashIcon />
